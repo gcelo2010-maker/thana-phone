@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET" />
+    <application android:label="THA'NA" android:icon="@android:drawable/sym_def_app_icon"
+        android:theme="@android:style/Theme.Material.NoActionBar" android:allowBackup="false">
+
+        <activity android:name=".MainActivity" android:exported="true" android:launchMode="singleTop"
+            android:windowSoftInputMode="adjustResize"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- THA'NA si Home (launcher). Fikur si parazgjedhje; aktivizohet nga Cilësime. -->
+        <activity-alias android:name=".HomeAlias" android:targetActivity=".MainActivity"
+            android:enabled="false" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.HOME" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity-alias>
+        <receiver android:name=".SalesReceiver" android:exported="true" android:label="THA'NA · Shitjet sot">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/w_sales" />
+        </receiver>
+        <receiver android:name=".HealthReceiver" android:exported="true" android:label="THA'NA · Shëndeti i biznesit">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/w_health" />
+        </receiver>
+        <receiver android:name=".DebtReceiver" android:exported="true" android:label="THA'NA · Të arkëtueshme">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/w_debt" />
+        </receiver>
+        <receiver android:name=".ApprovalsReceiver" android:exported="true" android:label="THA'NA · Aprovime">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/w_approvals" />
+        </receiver>
+        <receiver android:name=".AlertsReceiver" android:exported="true" android:label="THA'NA · Sinjale">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/w_alerts" />
+        </receiver>
+        <receiver android:name=".TrendReceiver" android:exported="true" android:label="THA'NA · Shitjet 14 ditë">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/w_trend" />
+        </receiver>
+        <receiver android:name=".AskReceiver" android:exported="true" android:label="THA'NA · Pyet THA'NA">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/w_ask" />
+        </receiver>
+    </application>
+</manifest>
