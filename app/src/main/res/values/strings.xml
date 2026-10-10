@@ -3,7 +3,7 @@
     <string name="d_health">Shëndeti i biznesit 0–100</string>
     <string name="d_debt">Të arkëtueshme, afatet e kaluara, ditët e pagesës</string>
     <string name="d_approvals">Veprimet që presin vendimin tënd</string>
-    <string name="d_alerts">Sinjalet e THA'NA</string>
+    <string name="d_alerts">Sinjalet e THA\'NA</string>
     <string name="d_trend">Shitjet e 14 ditëve të fundit</string>
-    <string name="d_ask">Pyet THA'NA AI</string>
+    <string name="d_ask">Pyet THA\'NA AI</string>
 </resources>
