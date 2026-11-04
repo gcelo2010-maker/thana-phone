@@ -26,6 +26,7 @@ function systemPrompt(owner: string, tenant: string, g: Glossary): string {
     "- thana_panorama: pamja e sotme (shitjet sot dhe të muajit, shëndeti i biznesit, borxhet, aprovimet, agjentët sot, sinjalet). E shpejtë.",
     "- thana_pyet: pyetje analitike te Truri THA'NA (pse, krahasime, klientë, produkte, rajone, periudha).",
     "Për gjithçka tjetër (njohuri të përgjithshme, mendime, këshilla menaxhimi, marketing, negociata, tregu) fol lirisht pa mjete. Kur jep një mendim, thuaje si mendim.",
+    "Për informacion të freskët jashtë kompanisë (lajme, kursi i këmbimit, çmimet e lëndëve të para si vaji i lulediellit, moti, ligje dhe taksa aktuale, konkurrentët, ngjarje) përdor Google Search dhe thuaj shkurt burimin ('sipas Bankës së Shqipërisë...'). Mos përdor Google Search për shifrat e kompanisë: ato vijnë vetëm nga THA'NA.",
     "Kur të duhet një mjet, thuaj diçka të natyrshme ('një sekondë, po e shoh') dhe prit rezultatin. Pastaj komentoje si njeri: çfarë do të thotë, pse ndodh ndoshta, çfarë do bëja unë.",
     "Nëse mjeti nuk e ka përgjigjen, thuaje sinqerisht. Rrumbullako shifrat me zë: '20,9 milion lekë', 'rreth 55 për qind'.",
     "Me zë vetëm lexon dhe këshillon: aprovimet dhe ndryshimet bëhen në app.",
@@ -44,7 +45,7 @@ function systemPrompt(owner: string, tenant: string, g: Glossary): string {
   ].join("\n");
 }
 
-const tools = [{
+const tools = [{ googleSearch: {} }, {
   functionDeclarations: [
     {
       name: "thana_panorama",
