@@ -6,7 +6,7 @@ Android vetëm shfaq dhe kërkon. Shifrat, lejet dhe vendimet i konfirmon THA'NA
 - **App:** Hyrje (PIN si PWA) · Sot · Financa · Shitje · Aprovime · THA'NA AI · Cilësime
 - **Tablet:** menu anësore + përmbajtja (≥600dp), edhe në landscape
 - **9 widget-e:** Shitjet sot (1×1) · Shëndeti (2×1) · Të arkëtueshme (2×2) · Aprovime (4×1) · Sinjale (4×2) · Shitjet 14 ditë (2×2) · Pyet THA'NA (4×1) · Agjentët sot (4×2) · Fol me THA'NA (1×1)
-- **Bisedë live me zë (v0.8):** Gemini Live (`gemini-3.8-live`) = vetëm veshi dhe zëri femëror. Çdo pyetje shkon te `voice-tool` → Claude (`claude-sonnet-4-6`): bisedë e lirë dhe këshilla direkt, web search për gjëra aktuale, shifrat e kompanisë vetëm nga THA'NA (`owner-snapshot`, `brain-chat`). Çelësat mbeten në server; `voice-session` jep çelës Gemini të përkohshëm. Rezervë: modaliteti i thjeshtë.
+- **Bisedë live me zë (v0.9):** zgjidh zërin **GPT Realtime** (`gpt-realtime-2.1`, zëri `marin`, parazgjedhur) ose **Gemini Live**. Gemini Live (`gemini-3.8-live`) = vetëm veshi dhe zëri femëror. Çdo pyetje shkon te `voice-tool` → Claude (`claude-sonnet-4-6`): bisedë e lirë dhe këshilla direkt, web search për gjëra aktuale, shifrat e kompanisë vetëm nga THA'NA (`owner-snapshot`, `brain-chat`). Çelësat mbeten në server; `voice-session` jep çelës Gemini të përkohshëm. Rezervë: modaliteti i thjeshtë.
 - **Launcher:** Cilësime → "THA'NA si ekran kryesor"
 
 ## Lidhja me THA'NA (pa ndryshime në tabela/funksione ekzistuese)

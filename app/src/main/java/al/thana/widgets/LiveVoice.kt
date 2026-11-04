@@ -43,7 +43,7 @@ import kotlin.math.sqrt
  * Mikrofoni transmetohet vazhdimisht (16 kHz PCM); zëri vjen në kohë reale (24 kHz PCM).
  * Mund ta ndërpresësh THA'NA-n duke folur. Shifrat merren vetëm nga thana_panorama / thana_pyet.
  */
-class LiveEngine(private val ctx: Context) : VoiceSession {
+class LiveEngine(private val ctx: Context, private val preferred: String = "openai") : VoiceSession {
     override val state = mutableStateOf(VState.Idle)
     override val partial = mutableStateOf("")
     override val level = mutableFloatStateOf(0f)
@@ -54,6 +54,10 @@ class LiveEngine(private val ctx: Context) : VoiceSession {
     override val toggle = mutableStateOf(true)            // mikrofoni hapur
     override val toggleLabel = "Mikrofoni"
     override val title = "Bisedë live"
+    /** "openai" (GPT Realtime) ose "gemini" (Gemini Live) — vendoset nga serveri. */
+    val engine = mutableStateOf(preferred)
+    private val oa get() = engine.value == "openai"
+    private val rate get() = if (oa) 24000 else 16000
 
     private val main = Handler(Looper.getMainLooper())
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
@@ -99,25 +103,35 @@ class LiveEngine(private val ctx: Context) : VoiceSession {
         }
         state.value = VState.Thinking; message.value = null
         scope.launch {
-            val c = withContext(Dispatchers.IO) { Repo.voiceSession(ctx) }
+            val c = withContext(Dispatchers.IO) { Repo.voiceSession(ctx, preferred) }
             if (!c.has("token")) { state.value = VState.Idle; message.value = c.optString("error", "Biseda live nuk u hap."); return@launch }
+            engine.value = c.optString("engine", "gemini")
             cfg = c; urlIndex = 0; connect()
         }
     }
 
     private fun connect() {
         val c = cfg ?: return
+        if (oa) {                                          // GPT Realtime: një URL, çelësi i përkohshëm si header
+            if (urlIndex > 0) { end("Nuk u lidh me GPT. Provo përsëri ose zgjidh Gemini."); return }
+            setupDone = false
+            val req = Request.Builder().url(c.getString("ws_url")).header("Authorization", "Bearer " + c.getString("token")).build()
+            ws = http.newWebSocket(req, listener())
+            return
+        }
         val urls = c.getJSONArray("ws_urls")
         if (urlIndex >= urls.length()) { end("Nuk u lidh me zërin live. Kontrollo internetin dhe provo përsëri."); return }
         setupDone = false
         val url = urls.getString(urlIndex) + "?access_token=" + URLEncoder.encode(c.getString("token"), "UTF-8")
-        ws = http.newWebSocket(Request.Builder().url(url).build(), object : WebSocketListener() {
-            override fun onOpen(webSocket: WebSocket, response: Response) { webSocket.send(setupMessage(c).toString()) }
+        ws = http.newWebSocket(Request.Builder().url(url).build(), listener())
+    }
+
+    private fun listener() = object : WebSocketListener() {
+            override fun onOpen(webSocket: WebSocket, response: Response) { if (!oa) cfg?.let { webSocket.send(setupMessage(it).toString()) } }
             override fun onMessage(webSocket: WebSocket, text: String) { main.post { handle(text) } }
             override fun onMessage(webSocket: WebSocket, bytes: ByteString) { val t = bytes.utf8(); main.post { handle(t) } }
             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) { webSocket.close(1000, null); main.post { closed(reason) } }
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) { main.post { closed(t.message ?: "") } }
-        })
     }
 
     private fun closed(reason: String) {
@@ -143,11 +157,62 @@ class LiveEngine(private val ctx: Context) : VoiceSession {
 
     private fun send(o: JSONObject) { ws?.send(o.toString()) }
 
-    private fun sendAudio(b: ByteArray) = send(JSONObject().put("realtimeInput", JSONObject().put("audio", JSONObject()
+    private fun sendAudio(b: ByteArray) = if (oa)
+        send(JSONObject().put("type", "input_audio_buffer.append").put("audio", Base64.encodeToString(b, Base64.NO_WRAP)))
+    else send(JSONObject().put("realtimeInput", JSONObject().put("audio", JSONObject()
         .put("data", Base64.encodeToString(b, Base64.NO_WRAP)).put("mimeType", "audio/pcm;rate=16000"))))
+
+    private fun interrupted() {
+        playQ.clear(); track?.pause(); track?.flush(); track?.play()
+        state.value = VState.Listening; modelIdx = -1
+    }
+
+    private fun userText(t: String, append: Boolean) {
+        if (userIdx < 0 || !append) { turns += Turn(true, t.trimStart()); userIdx = turns.lastIndex; modelIdx = -1 }
+        else turns[userIdx] = Turn(true, turns[userIdx].text + t)
+    }
+
+    private fun modelText(t: String) {
+        if (modelIdx < 0) { turns += Turn(false, t.trimStart()); modelIdx = turns.lastIndex; userIdx = -1 }
+        else turns[modelIdx] = Turn(false, turns[modelIdx].text + t)
+    }
+
+    /** Ngjarjet e GPT Realtime. */
+    private fun handleOpenAI(m: JSONObject) {
+        when (m.optString("type")) {
+            "session.created" -> {
+                setupDone = true; connected = true; message.value = null
+                startAudio(); state.value = VState.Listening
+                cfg?.optString("greeting")?.takeIf { it.isNotBlank() }?.let { g ->
+                    send(JSONObject().put("type", "conversation.item.create").put("item", JSONObject().put("type", "message").put("role", "user")
+                        .put("content", JSONArray().put(JSONObject().put("type", "input_text").put("text", g)))))
+                    send(JSONObject().put("type", "response.create"))
+                }
+            }
+            "response.output_audio.delta" -> m.optString("delta").takeIf { it.isNotEmpty() }?.let {
+                playQ.offer(Base64.decode(it, Base64.DEFAULT)); state.value = VState.Speaking
+            }
+            "response.output_audio_transcript.delta" -> m.optString("delta").takeIf { it.isNotEmpty() }?.let { modelText(it) }
+            "conversation.item.input_audio_transcription.completed" -> m.optString("transcript").trim().takeIf { it.isNotEmpty() }?.let {
+                // Transkripti vjen pas fillimit të përgjigjes: vendose para saj.
+                val at = if (modelIdx >= 0) modelIdx else turns.size
+                turns.add(at, Turn(true, it)); if (modelIdx >= 0) modelIdx++
+                userIdx = -1
+            }
+            "input_audio_buffer.speech_started" -> if (state.value == VState.Speaking || playQ.isNotEmpty()) interrupted()
+            "response.done" -> { modelIdx = -1; userIdx = -1 }
+            "response.function_call_arguments.done" -> {
+                val args = runCatching { JSONObject(m.optString("arguments")) }.getOrElse { JSONObject() }
+                runTool(m.optString("call_id"), m.optString("name"), args)
+            }
+            "error" -> m.optJSONObject("error")?.optString("message")?.takeIf { it.isNotBlank() && !it.contains("buffer", true) }
+                ?.let { message.value = "GPT: $it" }
+        }
+    }
 
     private fun handle(text: String) {
         val m = runCatching { JSONObject(text) }.getOrNull() ?: return
+        if (oa) { handleOpenAI(m); return }
         when {
             m.has("setupComplete") -> {
                 setupDone = true; connected = true; message.value = null
@@ -166,31 +231,26 @@ class LiveEngine(private val ctx: Context) : VoiceSession {
     }
 
     private fun server(sc: JSONObject) {
-        sc.optJSONObject("inputTranscription")?.optString("text")?.takeIf { it.isNotEmpty() }?.let { t ->
-            if (userIdx < 0) { turns += Turn(true, t.trimStart()); userIdx = turns.lastIndex; modelIdx = -1 }
-            else turns[userIdx] = Turn(true, turns[userIdx].text + t)
-        }
-        sc.optJSONObject("outputTranscription")?.optString("text")?.takeIf { it.isNotEmpty() }?.let { t ->
-            if (modelIdx < 0) { turns += Turn(false, t.trimStart()); modelIdx = turns.lastIndex; userIdx = -1 }
-            else turns[modelIdx] = Turn(false, turns[modelIdx].text + t)
-        }
+        sc.optJSONObject("inputTranscription")?.optString("text")?.takeIf { it.isNotEmpty() }?.let { userText(it, true) }
+        sc.optJSONObject("outputTranscription")?.optString("text")?.takeIf { it.isNotEmpty() }?.let { modelText(it) }
         sc.optJSONObject("modelTurn")?.optJSONArray("parts")?.let { parts ->
             for (i in 0 until parts.length()) {
                 val d = parts.getJSONObject(i).optJSONObject("inlineData")?.optString("data") ?: continue
                 if (d.isNotEmpty()) { playQ.offer(Base64.decode(d, Base64.DEFAULT)); state.value = VState.Speaking }
             }
         }
-        if (sc.optBoolean("interrupted")) {             // e ndërpreve: ndal zërin menjëherë
-            playQ.clear(); track?.pause(); track?.flush(); track?.play()
-            state.value = VState.Listening; modelIdx = -1
-        }
+        if (sc.optBoolean("interrupted")) interrupted()   // e ndërpreve: ndal zërin menjëherë
         if (sc.optBoolean("turnComplete")) { modelIdx = -1; userIdx = -1 }
     }
 
     private fun tools(calls: JSONArray) {
         for (i in 0 until calls.length()) {
             val fc = calls.getJSONObject(i)
-            val id = fc.optString("id"); val name = fc.optString("name"); val args = fc.optJSONObject("args") ?: JSONObject()
+            runTool(fc.optString("id"), fc.optString("name"), fc.optJSONObject("args") ?: JSONObject())
+        }
+    }
+
+    private fun runTool(id: String, name: String, args: JSONObject) {
             val history = synchronized(memo) { memo.takeLast(16).toList() }
             turns += Turn(false, when (name) {
                 "thana_mendo" -> "⟳ Po mendoj…"
@@ -221,11 +281,14 @@ class LiveEngine(private val ctx: Context) : VoiceSession {
                         else -> "Mjet i panjohur."
                     }
                 }
-                send(JSONObject().put("toolResponse", JSONObject().put("functionResponses", JSONArray().put(
+                if (oa) {
+                    send(JSONObject().put("type", "conversation.item.create").put("item", JSONObject()
+                        .put("type", "function_call_output").put("call_id", id).put("output", result)))
+                    send(JSONObject().put("type", "response.create"))
+                } else send(JSONObject().put("toolResponse", JSONObject().put("functionResponses", JSONArray().put(
                     JSONObject().put("id", id).put("name", name).put("response", JSONObject().put("result", result))))))
                 if (state.value == VState.Thinking) state.value = VState.Listening
             }
-        }
     }
 
     /** Pamja e sotme si tekst për modelin. Vetëm shifra nga owner-snapshot; ato që mungojnë thuhen "pa të dhëna". */
@@ -260,9 +323,10 @@ class LiveEngine(private val ctx: Context) : VoiceSession {
             .setAudioFormat(AudioFormat.Builder().setSampleRate(24000).setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
                 .setEncoding(AudioFormat.ENCODING_PCM_16BIT).build())
             .setBufferSizeInBytes(outMin * 4).setTransferMode(AudioTrack.MODE_STREAM).build().also { it.play() }
-        val inMin = AudioRecord.getMinBufferSize(16000, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
-        val r = AudioRecord(MediaRecorder.AudioSource.VOICE_COMMUNICATION, 16000, AudioFormat.CHANNEL_IN_MONO,
-            AudioFormat.ENCODING_PCM_16BIT, maxOf(inMin, 6400))
+        val sr = rate
+        val inMin = AudioRecord.getMinBufferSize(sr, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
+        val r = AudioRecord(MediaRecorder.AudioSource.VOICE_COMMUNICATION, sr, AudioFormat.CHANNEL_IN_MONO,
+            AudioFormat.ENCODING_PCM_16BIT, maxOf(inMin, sr * 2 / 5))
         rec = r
         if (AcousticEchoCanceler.isAvailable()) aec = AcousticEchoCanceler.create(r.audioSessionId)?.also { it.enabled = true }
         if (NoiseSuppressor.isAvailable()) ns = NoiseSuppressor.create(r.audioSessionId)?.also { it.enabled = true }
@@ -270,7 +334,7 @@ class LiveEngine(private val ctx: Context) : VoiceSession {
         r.startRecording()
 
         thread(name = "thana-mic") {
-            val buf = ByteArray(3200)                    // 100 ms
+            val buf = ByteArray(sr / 5)                  // 100 ms (16-bit mono)
             while (running) {
                 val n = rec?.read(buf, 0, buf.size) ?: break
                 if (n <= 0) continue

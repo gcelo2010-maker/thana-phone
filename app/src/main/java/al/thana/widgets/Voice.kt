@@ -251,7 +251,7 @@ class VoiceActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        current.value = LiveEngine(this)
+        current.value = LiveEngine(this, voicePref())
         askMic = registerForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
             if (ok) current.value?.start()
             else current.value?.message?.value = "Pa mikrofon nuk mund të flasësh me THA'NA. Lejoje te Cilësime → Apps → THA'NA."
@@ -260,7 +260,8 @@ class VoiceActivity : ComponentActivity() {
             ThanaTheme {
                 current.value?.let { e ->
                     VoiceScreen(e, onClose = { finish() },
-                        onFallback = if (e is LiveEngine) ({ switchToSimple() }) else null)
+                        onFallback = if (e is LiveEngine) ({ switchToSimple() }) else null,
+                        engine = (e as? LiveEngine)?.engine?.value, onEngine = { switchEngine(it) })
                 }
             }
         }
@@ -269,6 +270,15 @@ class VoiceActivity : ComponentActivity() {
             checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED -> current.value?.start()
             else -> askMic.launch(Manifest.permission.RECORD_AUDIO)
         }
+    }
+
+    private fun voicePref() = getSharedPreferences("thana_voice", MODE_PRIVATE).getString("engine", "openai") ?: "openai"
+
+    /** Ndërro zërin GPT ⇄ Gemini: mbyll bisedën dhe hap një të re me motorin tjetër. */
+    private fun switchEngine(e: String) {
+        getSharedPreferences("thana_voice", MODE_PRIVATE).edit().putString("engine", e).apply()
+        current.value?.release()
+        current.value = LiveEngine(this, e).also { if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) it.start() }
     }
 
     private fun switchToSimple() {
@@ -305,7 +315,8 @@ fun VoiceOrb(state: VState, level: Float, onTap: () -> Unit) {
 }
 
 @Composable
-fun VoiceScreen(e: VoiceSession, onClose: () -> Unit, onFallback: (() -> Unit)? = null) {
+fun VoiceScreen(e: VoiceSession, onClose: () -> Unit, onFallback: (() -> Unit)? = null,
+                engine: String? = null, onEngine: ((String) -> Unit)? = null) {
     val list = rememberLazyListState()
     LaunchedEffect(e.turns.size, e.turns.lastOrNull()?.text?.length) { if (e.turns.isNotEmpty()) list.scrollToItem(e.turns.lastIndex) }
     Column(Modifier.fillMaxSize().background(T.Bg).systemBarsPadding().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -315,6 +326,17 @@ fun VoiceScreen(e: VoiceSession, onClose: () -> Unit, onFallback: (() -> Unit)? 
                 Text(e.title, style = T.Title.copy(fontSize = 24.sp))
             }
             IconButton({ e.stop(); onClose() }, Modifier.size(48.dp)) { Icon(Icons.Filled.Close, "Mbyll", tint = T.Muted) }
+        }
+        if (engine != null && onEngine != null) Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            Text("Zëri:", style = T.Small)
+            listOf("openai" to "GPT", "gemini" to "Gemini").forEach { (k, label) ->
+                val on = engine == k
+                Text(label, style = T.Small.copy(color = if (on) T.Bg else T.Ink, fontSize = 13.sp),
+                    modifier = Modifier.clip(RoundedCornerShape(50)).background(if (on) T.Brass else T.Surface)
+                        .border(1.dp, T.Border, RoundedCornerShape(50)).clickable(enabled = !on) { onEngine(k) }
+                        .padding(horizontal = 14.dp, vertical = 6.dp))
+            }
         }
         Spacer(Modifier.height(8.dp))
         VoiceOrb(e.state.value, e.level.floatValue) { e.tap() }

@@ -93,6 +93,39 @@ const relayTools = [{
   }],
 }];
 
+// GPT Realtime (OpenAI): i njëjti rol si Gemini në v0.8 (zë + bisedë e lehtë; mendimi nga voice-tool).
+const OPENAI_MODEL = Deno.env.get("THANA_OPENAI_MODEL") ?? "gpt-realtime-2.1";
+async function openaiSession(key: string, instructions: string, withTranscription = true): Promise<Response> {
+  return await fetch("https://api.openai.com/v1/realtime/client_secrets", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      expires_after: { anchor: "created_at", seconds: 600 },
+      session: {
+        type: "realtime",
+        model: OPENAI_MODEL,
+        instructions,
+        output_modalities: ["audio"],
+        audio: {
+          input: {
+            format: { type: "audio/pcm", rate: 24000 },
+            noise_reduction: { type: "far_field" },
+            ...(withTranscription ? { transcription: { model: "gpt-4o-transcribe", prompt: "Bisedë në gjuhën shqipe për biznes: shitje, borxhe, klientë, agjentë, Deka." } } : {}),
+            turn_detection: { type: "semantic_vad", eagerness: "medium", create_response: true, interrupt_response: true },
+          },
+          output: { format: { type: "audio/pcm", rate: 24000 }, voice: Deno.env.get("THANA_OPENAI_VOICE") ?? "marin" },
+        },
+        tools: [{
+          type: "function", name: "thana_mendo",
+          description: relayTools[0].functionDeclarations[0].description,
+          parameters: { type: "object", properties: { pyetja: { type: "string", description: "Fjalët e përdoruesit fjalë për fjalë, me emrat e korrigjuar." } }, required: ["pyetja"] },
+        }],
+        tool_choice: "auto",
+      },
+    }),
+  });
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   const token = req.headers.get("x-session-token") ?? "";
@@ -135,6 +168,19 @@ Deno.serve(async (req) => {
 
     const body = await req.json().catch(() => ({}));
     const relay = parseFloat(String(body.client ?? "0")) >= 0.8;
+    const first = (who.full_name ?? "").split(" ")[0] || "";
+    const greeting = `Fillo bisedën: përshëndete ${first} me emër, ngrohtë dhe natyrshëm, si një koleg që e njeh, dhe pyete si mund ta ndihmosh. Shkurt.`;
+    const okey = Deno.env.get("OPENAI_API_KEY");
+    if (relay && body.engine === "openai" && okey) {
+      const instr = relayPrompt(who.full_name ?? "pronari", who.tenant ?? "biznesin", who.glossary);
+      let o = await openaiSession(okey, instr);
+      if (o.status === 400) { console.error("voice-session openai", (await o.text()).slice(0, 300)); o = await openaiSession(okey, instr, false); }
+      if (o.ok) {
+        const j = await o.json();
+        return json({ engine: "openai", token: j.value, ws_url: `wss://api.openai.com/v1/realtime?model=${OPENAI_MODEL}`, greeting });
+      }
+      console.error("voice-session openai", o.status, (await o.text()).slice(0, 300));   // bie te Gemini
+    }
     const now = Date.now();
     const r = await fetch("https://generativelanguage.googleapis.com/v1alpha/auth_tokens", {
       method: "POST",
@@ -150,8 +196,8 @@ Deno.serve(async (req) => {
       return json({ error: "Google nuk dha leje për bisedën. Provo përsëri." }, 502);
     }
     const { name } = await r.json();
-    const first = (who.full_name ?? "").split(" ")[0] || "";
     return json({
+      engine: "gemini",
       token: name,
       model: `models/${MODEL}`,
       ws_urls: [
@@ -160,7 +206,7 @@ Deno.serve(async (req) => {
       ],
       system: (relay ? relayPrompt : systemPrompt)(who.full_name ?? "pronari", who.tenant ?? "biznesin", who.glossary),
       tools: relay ? relayTools : tools,
-      greeting: `Fillo bisedën: përshëndete ${first} me emër, ngrohtë dhe natyrshëm, si një koleg që e njeh, dhe pyete si mund ta ndihmosh. Shkurt.`,
+      greeting,
       voice: Deno.env.get("THANA_VOICE_NAME") ?? "Aoede",
       // Bashkohet në setup nga app-i (v0.7+): dëgjim më pak i ndjeshëm ndaj zhurmës dhe jehonës.
       setup_extra: {

@@ -112,11 +112,11 @@ object Repo {
     } catch (e: Exception) { Result(false, "Nuk u lidh. Asgjë nuk u ndryshua.") }
 
     /** Hap një bisedë live me zë: kthen çelësin e përkohshëm Gemini + konfigurimin, ose {"error": ...}. */
-    fun voiceSession(ctx: Context): JSONObject = try {
+    fun voiceSession(ctx: Context, engine: String = "openai"): JSONObject = try {
         val tok = token(ctx) ?: throw IllegalStateException("Sesioni ka mbaruar. Hyr përsëri.")
         val c = open("/functions/v1/voice-session", "POST")
         c.setRequestProperty("x-session-token", tok)
-        c.send(JSONObject().put("client", BuildConfig.VERSION_NAME))
+        c.send(JSONObject().put("client", BuildConfig.VERSION_NAME).put("engine", engine))
         val body = c.text()
         runCatching { JSONObject(body) }.getOrElse { JSONObject().put("error", "Përgjigje e papritur (${c.responseCode}).") }
             .also { if (c.responseCode == 401) logout(ctx) }
