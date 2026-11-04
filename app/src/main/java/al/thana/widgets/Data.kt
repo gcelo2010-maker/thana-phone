@@ -1,6 +1,7 @@
 package al.thana.widgets
 
 import android.content.Context
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.net.HttpURLConnection
@@ -115,12 +116,28 @@ object Repo {
         val tok = token(ctx) ?: throw IllegalStateException("Sesioni ka mbaruar. Hyr përsëri.")
         val c = open("/functions/v1/voice-session", "POST")
         c.setRequestProperty("x-session-token", tok)
-        c.send(JSONObject())
+        c.send(JSONObject().put("client", BuildConfig.VERSION_NAME))
         val body = c.text()
         runCatching { JSONObject(body) }.getOrElse { JSONObject().put("error", "Përgjigje e papritur (${c.responseCode}).") }
             .also { if (c.responseCode == 401) logout(ctx) }
     } catch (e: IllegalStateException) { JSONObject().put("error", e.message)
     } catch (e: Exception) { JSONObject().put("error", "Nuk u lidh me THA'NA. Kontrollo internetin.") }
+
+    /** Mendja e bisedës me zë (voice-tool → Claude + THA'NA + web). Kthen tekstin që do lexohet me zë. */
+    fun voiceTool(ctx: Context, name: String, args: JSONObject, history: List<Turn>): String = try {
+        val tok = token(ctx) ?: throw IllegalStateException("Sesioni ka mbaruar. Hyr përsëri.")
+        val c = open("/functions/v1/voice-tool", "POST")
+        c.setRequestProperty("x-session-token", tok)
+        c.readTimeout = 90_000
+        val h = JSONArray()
+        history.forEach { h.put(JSONObject().put("role", if (it.mine) "user" else "assistant").put("text", it.text)) }
+        c.send(JSONObject().put("name", name).put("args", args).put("history", h))
+        val j = runCatching { JSONObject(c.text()) }.getOrNull()
+        if (c.responseCode == 401) logout(ctx)
+        j?.optString("result")?.takeIf { it.isNotBlank() } ?: j?.optString("error")?.takeIf { it.isNotBlank() }
+            ?: "Nuk mora përgjigje tani. Provo përsëri."
+    } catch (e: IllegalStateException) { e.message ?: "Sesioni ka mbaruar."
+    } catch (e: Exception) { "Nuk u lidh me THA'NA. Kontrollo internetin." }
 
     /** Pyetje te THA'NA AI. onText merr tekstin e grumbulluar ndërkohë që vjen. Kthen session_id. */
     fun ask(ctx: Context, question: String, sessionId: String?, onText: (String) -> Unit): String? {

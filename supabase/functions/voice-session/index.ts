@@ -63,6 +63,34 @@ const tools = [{ googleSearch: {} }, {
   ],
 }];
 
+// v0.8+: Gemini = vetëm veshi dhe zëri. Mendimi (bisedë, njohuri, web, shifrat THA'NA) vjen nga Claude te voice-tool.
+function relayPrompt(owner: string, tenant: string, g: Glossary): string {
+  return [
+    `Ti je zëri i THA'NA-s, partneres së biznesit për ${tenant}. Po flet live me ${owner}. Je zë femëror, shqip i rrjedhshëm, i ngrohtë, si një shqiptare e lindur.`,
+    "Ti NUK mendon vetë përgjigjet. Për ÇDO pyetje, kërkesë, mendim ose temë që ngre përdoruesi (biznes, shifra, njohuri të përgjithshme, lajme, këshilla, çdo gjë) thërrit menjëherë mjetin thana_mendo.",
+    "Pa mjet përgjigju vetëm për përshëndetje, faleminderit, 'po/jo', 'prit pak', ose kur të kërkon të përsëritësh.",
+    "Para mjetit thuaj vetëm 2–3 fjalë natyrale ('një sekondë', 'po e shoh') dhe pastaj hesht deri sa vjen rezultati.",
+    "Kur vjen rezultati: LEXOJE FJALË PËR FJALË, natyrshëm, pa shtuar, pa hequr, pa ndryshuar asnjë shifër apo emër. Mos e komento më pas.",
+    "Në thana_mendo kopjo pyetjen e përdoruesit fjalë për fjalë, me emrat e korrigjuar nga listat më poshtë. Viti aktual është 2026. Nëse i referohet diçkaje të mëparshme, mjeti e ka historinë e bisedës.",
+    "Nëse përdoruesi të ndërpret, ndalo dhe dëgjo.",
+    "",
+    `Klientët: ${g.customers ?? "-"}.`,
+    `Agjentët: ${g.agents ?? "-"}.`,
+    `Markat: Deka, Deka No Comment, Deka Infinit, Deka Gel Power, Deka Zbardhues, Deka Aktiv, DIP, DIX, Prim Soft, OLIM, Aslo, Frito.`,
+    `Produktet: ${g.products ?? "-"}.`,
+    `Zonat: ${g.zones ?? "-"}.`,
+  ].join("\n");
+}
+
+const relayTools = [{
+  functionDeclarations: [{
+    name: "thana_mendo",
+    description: "Mendja e THA'NA-s. Thirre për çdo pyetje ose temë të përdoruesit; kthen tekstin e saktë që duhet lexuar me zë.",
+    parameters: { type: "OBJECT", properties: { pyetja: { type: "STRING", description: "Fjalët e përdoruesit fjalë për fjalë, me emrat e korrigjuar." } }, required: ["pyetja"] },
+    behavior: "BLOCKING",
+  }],
+}];
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   const token = req.headers.get("x-session-token") ?? "";
@@ -103,6 +131,8 @@ Deno.serve(async (req) => {
     });
     if (!who || !["director", "admin"].includes(who.role)) return json({ error: "Sesion i pavlefshëm ose rol i pamjaftueshëm." }, 403);
 
+    const body = await req.json().catch(() => ({}));
+    const relay = parseFloat(String(body.client ?? "0")) >= 0.8;
     const now = Date.now();
     const r = await fetch("https://generativelanguage.googleapis.com/v1alpha/auth_tokens", {
       method: "POST",
@@ -126,8 +156,8 @@ Deno.serve(async (req) => {
         "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContentConstrained",
         "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContentConstrained",
       ],
-      system: systemPrompt(who.full_name ?? "pronari", who.tenant ?? "biznesin", who.glossary),
-      tools,
+      system: (relay ? relayPrompt : systemPrompt)(who.full_name ?? "pronari", who.tenant ?? "biznesin", who.glossary),
+      tools: relay ? relayTools : tools,
       greeting: `Fillo bisedën: përshëndete ${first} me emër, ngrohtë dhe natyrshëm, si një koleg që e njeh, dhe pyete si mund ta ndihmosh. Shkurt.`,
       voice: Deno.env.get("THANA_VOICE_NAME") ?? "Aoede",
       // Bashkohet në setup nga app-i (v0.7+): dëgjim më pak i ndjeshëm ndaj zhurmës dhe jehonës.
