@@ -70,7 +70,9 @@ class LiveEngine(private val ctx: Context) : VoiceSession {
     private var ns: NoiseSuppressor? = null
     private var track: AudioTrack? = null
     private val playQ = LinkedBlockingQueue<ByteArray>()
-    private var brainSession: String? = null
+    // Ringjallja e jehonës: kur THA'NA flet, zëri i saj nga altoparlanti nuk dërgohet si "fol i përdoruesit".
+    private val pre = ArrayDeque<ByteArray>()
+    private var loudFrames = 0
     private var userIdx = -1
     private var modelIdx = -1
 
@@ -132,9 +134,15 @@ class LiveEngine(private val ctx: Context) : VoiceSession {
         .put("systemInstruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", c.getString("system")))))
         .put("tools", c.getJSONArray("tools"))
         .put("inputAudioTranscription", JSONObject())
-        .put("outputAudioTranscription", JSONObject()))
+        .put("outputAudioTranscription", JSONObject())
+        .also { setup ->                                   // cilësime shtesë nga serveri, pa APK të re
+            c.optJSONObject("setup_extra")?.let { x -> x.keys().forEach { k -> setup.put(k, x.get(k)) } }
+        })
 
     private fun send(o: JSONObject) { ws?.send(o.toString()) }
+
+    private fun sendAudio(b: ByteArray) = send(JSONObject().put("realtimeInput", JSONObject().put("audio", JSONObject()
+        .put("data", Base64.encodeToString(b, Base64.NO_WRAP)).put("mimeType", "audio/pcm;rate=16000"))))
 
     private fun handle(text: String) {
         val m = runCatching { JSONObject(text) }.getOrNull() ?: return
@@ -189,9 +197,15 @@ class LiveEngine(private val ctx: Context) : VoiceSession {
                     when (name) {
                         "thana_panorama" -> panorama()
                         "thana_pyet" -> {
+                            // Çdo pyetje në sesion të ri të Trurit: konteksti i bisedës e mban Gemini;
+                            // kështu Pakti nuk bllokon përgjigjet si "kontradiktë" me pyetjet e mëparshme.
                             var last = ""
-                            brainSession = Repo.ask(ctx, args.optString("pyetja"), brainSession) { last = it }
-                            last.ifBlank { "Truri THA'NA nuk ktheu përgjigje." }
+                            val q = args.optString("pyetja") + (cfg?.optString("voice_question_suffix") ?: "")
+                            Repo.ask(ctx, q, null) { last = it }
+                            last.ifBlank {
+                                "Truri THA'NA nuk e verifikoi dot këtë përgjigje tani. Mos e pyet përsëri të njëjtën pyetje; " +
+                                    "thuaji pronarit ta formulojë ndryshe ose ta shohë te app."
+                            }
                         }
                         else -> "Mjet i panjohur."
                     }
@@ -254,8 +268,19 @@ class LiveEngine(private val ctx: Context) : VoiceSession {
                 while (i + 1 < n) { val v = ((buf[i + 1].toInt() shl 8) or (buf[i].toInt() and 0xff)).toShort().toDouble(); sum += v * v; i += 2 }
                 val lvl = (sqrt(sum / (n / 2)) / 3000.0).toFloat().coerceIn(0f, 1f)
                 main.post { level.floatValue = if (muted) 0f else lvl }
-                if (!muted) send(JSONObject().put("realtimeInput", JSONObject().put("audio", JSONObject()
-                    .put("data", Base64.encodeToString(buf, 0, n, Base64.NO_WRAP)).put("mimeType", "audio/pcm;rate=16000"))))
+                if (muted) continue
+                val frame = buf.copyOf(n)
+                val speaking = playQ.isNotEmpty() || state.value == VState.Speaking
+                if (!speaking) {
+                    while (pre.isNotEmpty()) sendAudio(pre.removeFirst())
+                    loudFrames = 0
+                    sendAudio(frame)
+                } else {
+                    // Gjatë zërit të THA'NA-s: dërgo vetëm kur flet qartë (ndërprerje e vërtetë), jo jehonën.
+                    loudFrames = if (lvl > 0.28f) loudFrames + 1 else 0
+                    pre.addLast(frame); if (pre.size > 4) pre.removeFirst()
+                    if (loudFrames >= 3) { while (pre.isNotEmpty()) sendAudio(pre.removeFirst()) }
+                }
             }
         }
         thread(name = "thana-play") {

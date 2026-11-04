@@ -1,4 +1,4 @@
-# THA'NA Phone · Android (telefon + tablet) · v0.6
+# THA'NA Phone · Android (telefon + tablet) · v0.7
 
 Android vetëm shfaq dhe kërkon. Shifrat, lejet dhe vendimet i konfirmon THA'NA OS (SalesVision AI).
 

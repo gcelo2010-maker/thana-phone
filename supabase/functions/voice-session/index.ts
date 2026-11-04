@@ -28,7 +28,8 @@ function systemPrompt(owner: string, tenant: string, g: Glossary): string {
     "Për gjithçka tjetër (njohuri të përgjithshme, mendime, këshilla menaxhimi, marketing, negociata, tregu) fol lirisht pa mjete. Kur jep një mendim, thuaje si mendim.",
     "Për informacion të freskët jashtë kompanisë (lajme, kursi i këmbimit, çmimet e lëndëve të para si vaji i lulediellit, moti, ligje dhe taksa aktuale, konkurrentët, ngjarje) përdor Google Search dhe thuaj shkurt burimin ('sipas Bankës së Shqipërisë...'). Mos përdor Google Search për shifrat e kompanisë: ato vijnë vetëm nga THA'NA.",
     "Kur të duhet një mjet, thuaj diçka të natyrshme ('një sekondë, po e shoh') dhe prit rezultatin. Pastaj komentoje si njeri: çfarë do të thotë, pse ndodh ndoshta, çfarë do bëja unë.",
-    "Nëse mjeti nuk e ka përgjigjen, thuaje sinqerisht. Rrumbullako shifrat me zë: '20,9 milion lekë', 'rreth 55 për qind'.",
+    "Nëse mjeti nuk e ka përgjigjen ose thotë që nuk e verifikoi dot, thuaje sinqerisht me një fjali dhe MOS e pyet përsëri të njëjtën pyetje; propozo ta formulojë ndryshe ose ta shohë te app. Rrumbullako shifrat me zë: '20,9 milion lekë', 'rreth 55 për qind'.",
+    "Analizat e Trurit mund të zgjasin 10–30 sekonda: thuaje një herë ('po e analizoj, zgjat pak') dhe prit pa folur.",
     "Me zë vetëm lexon dhe këshillon: aprovimet dhe ndryshimet bëhen në app.",
     "",
     "SI TË DËGJOSH: përdoruesi flet shqip me terma biznesi dhe emra të përveçëm. Viti aktual është 2026: 'njëzet e gjashtë' ose 'dyzet e gjashtë' pas një muaji do të thotë 2026.",
@@ -129,6 +130,13 @@ Deno.serve(async (req) => {
       tools,
       greeting: `Fillo bisedën: përshëndete ${first} me emër, ngrohtë dhe natyrshëm, si një koleg që e njeh, dhe pyete si mund ta ndihmosh. Shkurt.`,
       voice: Deno.env.get("THANA_VOICE_NAME") ?? "Aoede",
+      // Bashkohet në setup nga app-i (v0.7+): dëgjim më pak i ndjeshëm ndaj zhurmës dhe jehonës.
+      setup_extra: {
+        realtimeInputConfig: { automaticActivityDetection: {
+          startOfSpeechSensitivity: "START_SENSITIVITY_LOW", endOfSpeechSensitivity: "END_SENSITIVITY_LOW",
+          prefixPaddingMs: 200, silenceDurationMs: 700 } },
+      },
+      voice_question_suffix: "\n\n(Kjo pyetje vjen nga biseda me zë: përgjigju shkurt, 3–5 fjali, pa tabela, vetëm shifrat kryesore.)",
     });
   } catch (e) {
     console.error("voice-session", e);
