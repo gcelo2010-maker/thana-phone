@@ -48,6 +48,8 @@ class LiveEngine(private val ctx: Context) : VoiceSession {
     override val partial = mutableStateOf("")
     override val level = mutableFloatStateOf(0f)
     override val turns = mutableStateListOf<Turn>()
+    /** Kujtesa e bisedës për Claude: pyetjet dhe përgjigjet e plota (edhe kur zëri ndërpritet). */
+    private val memo = mutableListOf<Turn>()
     override val message = mutableStateOf<String?>(null)
     override val toggle = mutableStateOf(true)            // mikrofoni hapur
     override val toggleLabel = "Mikrofoni"
@@ -189,7 +191,7 @@ class LiveEngine(private val ctx: Context) : VoiceSession {
         for (i in 0 until calls.length()) {
             val fc = calls.getJSONObject(i)
             val id = fc.optString("id"); val name = fc.optString("name"); val args = fc.optJSONObject("args") ?: JSONObject()
-            val history = turns.filter { !it.text.startsWith("⟳") && it.text.isNotBlank() }.takeLast(12)
+            val history = synchronized(memo) { memo.takeLast(16).toList() }
             turns += Turn(false, when (name) {
                 "thana_mendo" -> "⟳ Po mendoj…"
                 "thana_pyet" -> "⟳ Truri THA'NA: ${args.optString("pyetja")}"
@@ -201,7 +203,9 @@ class LiveEngine(private val ctx: Context) : VoiceSession {
                 val result = withContext(Dispatchers.IO) {
                     when (name) {
                         // v0.8: çdo pyetje e vërtetë përgjigjet nga Claude në server (me THA'NA + web).
-                        "thana_mendo" -> Repo.voiceTool(ctx, name, args, history)
+                        "thana_mendo" -> Repo.voiceTool(ctx, name, args, history).also {
+                            synchronized(memo) { memo += Turn(true, args.optString("pyetja")); memo += Turn(false, it) }
+                        }
                         "thana_panorama" -> panorama()
                         "thana_pyet" -> {
                             // Çdo pyetje në sesion të ri të Trurit: konteksti i bisedës e mban Gemini;
