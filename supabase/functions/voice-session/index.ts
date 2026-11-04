@@ -14,7 +14,9 @@ const cors = {
 };
 const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { ...cors, "Content-Type": "application/json" } });
 
-function systemPrompt(owner: string, tenant: string): string {
+type Glossary = { customers: string | null; agents: string | null; products: string | null; zones: string | null };
+
+function systemPrompt(owner: string, tenant: string, g: Glossary): string {
   const today = new Date().toLocaleDateString("sq-AL", { timeZone: "Europe/Tirane", weekday: "long", day: "numeric", month: "long", year: "numeric" });
   return [
     `Ti je THA'NA, truri i biznesit për ${tenant}. Po flet live me zë me ${owner}, pronarin/drejtorin. Sot është ${today}.`,
@@ -25,6 +27,18 @@ function systemPrompt(owner: string, tenant: string): string {
     "Kur thirret një mjet, thuaj shkurt 'po e kontrolloj' dhe prit rezultatin. Mos shpik ndërkohë.",
     "Nëse mjeti nuk e ka përgjigjen, thuaje sinqerisht. Rrumbullako me zë: '20,9 milion lekë', '55 për qind'.",
     "Mos aprovo, mos fshi dhe mos ndrysho asgjë: ky kanal vetëm lexon dhe këshillon.",
+    "",
+    "SI TË DËGJOSH: përdoruesi flet shqip me terma biznesi dhe emra të përveçëm. Viti aktual është 2026: 'njëzet e gjashtë' ose 'dyzet e gjashtë' pas një muaji do të thotë 2026.",
+    "Kur pyetja përmban një emër, krahasoje me listat më poshtë dhe përdor shkrimin e saktë nga lista. Mos e ndrysho llojin: një klient mbetet klient, një agjent mbetet agjent, një produkt mbetet produkt.",
+    "Kur thërret thana_pyet: kopjo pyetjen e përdoruesit sa më fjalë për fjalë, me emrat e korrigjuar nga listat; shto kontekstin e bisedës vetëm nëse pyetja i referohet diçkaje të mëparshme ('ai', 'ky klient', 'po Elbasani?'). Mos shto fjalë që përdoruesi nuk i tha.",
+    "Nëse nuk je i sigurt çfarë emri tha, pyet shkurt para se të thërrasësh mjetin.",
+    "Truri kthen njëherë tabela: mos i lexo tabelat; thuaj 2–3 gjërat më të rëndësishme me fjalë.",
+    "",
+    `Klientët kryesorë: ${g.customers ?? "-"}.`,
+    `Agjentët: ${g.agents ?? "-"}.`,
+    `Markat: Deka, Deka No Comment, Deka Infinit, Deka Gel Power, Deka Zbardhues, Deka Aktiv, DIP, DIX, Prim Soft, OLIM, Aslo, Frito.`,
+    `Produktet kryesore: ${g.products ?? "-"}.`,
+    `Magazinat/zonat: ${g.zones ?? "-"}.`,
   ].join("\n");
 }
 
@@ -34,11 +48,13 @@ const tools = [{
       name: "thana_panorama",
       description: "Pamja e sotme e biznesit nga THA'NA OS: shitjet sot dhe muaji, ndryshimi %, shëndeti 0–100, borxhet dhe afatet e kaluara, ditët e pagesës, aprovimet në pritje, agjentët sot, sinjalet kryesore.",
       parameters: { type: "OBJECT", properties: {} },
+      behavior: "BLOCKING",
     },
     {
       name: "thana_pyet",
       description: "Bëji një pyetje analitike Trurit THA'NA (ka akses në të gjitha të dhënat e tenant-it: shitje, klientë, borxhe, produkte, agjentë, rajone, periudha). Kthen përgjigje me shifra të verifikuara.",
-      parameters: { type: "OBJECT", properties: { pyetja: { type: "STRING", description: "Pyetja e plotë në shqip." } }, required: ["pyetja"] },
+      parameters: { type: "OBJECT", properties: { pyetja: { type: "STRING", description: "Pyetja e përdoruesit fjalë për fjalë në shqip, me emrat e saktë nga listat; pa shtuar fjalë që ai nuk i tha." } }, required: ["pyetja"] },
+      behavior: "BLOCKING",
     },
   ],
 }];
@@ -58,7 +74,28 @@ Deno.serve(async (req) => {
         left join sv_tenants t on t.id = coalesce(s.tenant_id, u.tenant_id)
         where lower(s.token) = lower(${token}) and s.expires_at > now() and coalesce(u.is_active, true)
         limit 1`;
-      return u ?? null;
+      if (!u) return null;
+      // Fjalor për dëgjimin e saktë të emrave (vetëm lexim, 90 ditët e fundit).
+      const [g] = await tx`
+        with d as (select (now() at time zone 'Europe/Tirane')::date t)
+        select
+          (select string_agg(n, ', ') from (
+             select coalesce(c.trade_name, c.customer_name) n, sum(s.total_value) v
+             from sv_sales s join sv_customers c on c.customer_code = s.customer_code, d
+             where s.sale_date > d.t - 90 and coalesce(s.is_cancelled, false) = false
+             group by 1 order by 2 desc limit 40) x) customers,
+          (select string_agg(full_name, ', ') from (
+             select distinct full_name from sv_agents
+             where is_active and coalesce(is_test, false) = false and full_name is not null
+               and full_name !~* '^(magazina|kosove|test|drejtoria)') a) agents,
+          (select string_agg(n, ', ') from (
+             select k.product_name n, sum(s.total_value) v
+             from sv_sales s join sku_classification k on k.sku_code = s.sku_code, d
+             where s.sale_date > d.t - 90 and coalesce(s.is_cancelled, false) = false and k.product_name is not null
+             group by 1 order by 2 desc limit 30) y) products,
+          (select string_agg(distinct zone_name, ', ') from sv_agents
+             where is_active and zone_name is not null and zone_name !~* '^(test|drejtoria)') zones`;
+      return { ...u, glossary: g as Glossary };
     });
     if (!who || !["director", "admin"].includes(who.role)) return json({ error: "Sesion i pavlefshëm ose rol i pamjaftueshëm." }, 403);
 
@@ -85,7 +122,7 @@ Deno.serve(async (req) => {
         "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContentConstrained",
         "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContentConstrained",
       ],
-      system: systemPrompt(who.full_name ?? "pronari", who.tenant ?? "biznesin"),
+      system: systemPrompt(who.full_name ?? "pronari", who.tenant ?? "biznesin", who.glossary),
       tools,
       greeting: `Fillo bisedën: përshëndet shkurt ${first} me emër dhe pyet çfarë do të dijë. Një fjali.`,
       voice: Deno.env.get("THANA_VOICE_NAME") ?? "Charon",
