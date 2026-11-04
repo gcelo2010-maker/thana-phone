@@ -2,7 +2,7 @@
 // Mendja e bisedës me zë. Gemini Live = vetëm veshi dhe zëri; çdo pyetje vjen këtu dhe përgjigjet Claude.
 // - Bisedë e lirë, këshilla, njohuri të përgjithshme: Claude direkt.
 // - Informacion i freskët (lajme, kurse, çmime, ligje): Claude + web search.
-// - Shifrat e kompanisë: vetëm nga THA'NA (owner-snapshot / brain-chat), me të njëjtin sesion PWA.
+// - Shifrat e kompanisë: vetëm nga THA'NA (owner-snapshot / brain-chat / lexim i drejtpërdrejtë), me të njëjtin sesion PWA.
 // Asgjë nuk shkruhet në databazë.
 import postgres from "npm:postgres@3.4.4";
 
@@ -67,16 +67,39 @@ async function snapshot(token: string): Promise<string> {
   });
 }
 
+/** Ecuria e një produkti/marke sipas peshës (formatit): nga 1 janari deri sot vs e njëjta periudhë vjet. Vetëm lexim. */
+async function byWeight(tenantId: string | null, marka: string): Promise<string> {
+  const pat = "%" + marka.trim().replace(/[%_]/g, "").replace(/\s+/g, "%") + "%";
+  const rows = await sql.begin("read only", (tx) => tx`
+    with d as (select (now() at time zone 'Europe/Tirane')::date t),
+    x as (
+      select k.kg_per_unit kg, k.l_per_unit l, extract(year from s.sale_date)::int = extract(year from d.t)::int cur,
+             sum(s.total_value) v, sum(s.quantity * coalesce(k.kg_per_unit, k.l_per_unit)) w
+      from sv_sales s join sku_classification k on k.sku_code = s.sku_code, d
+      where k.product_name ilike ${pat} and coalesce(k.kategori_e_imet, '') <> 'SET' and coalesce(s.is_cancelled, false) = false
+        and (${tenantId}::uuid is null or s.tenant_id = ${tenantId}::uuid)
+        and ((s.sale_date between date_trunc('year', d.t)::date and d.t)
+          or (s.sale_date between (date_trunc('year', d.t) - interval '1 year')::date and (d.t - interval '1 year')::date))
+      group by 1, 2, 3)
+    select coalesce(kg::text || ' kg', l::text || ' litër', 'pa peshë') formati,
+           round(sum(v) filter (where not cur)) vlera_vjet, round(sum(v) filter (where cur)) vlera_sivjet,
+           round(sum(w) filter (where not cur)) sasia_vjet, round(sum(w) filter (where cur)) sasia_sivjet,
+           round(100 * (sum(v) filter (where cur) / nullif(sum(v) filter (where not cur), 0) - 1), 1) ndryshimi_pct
+    from x group by kg, l order by coalesce(kg, l) nulls last`);
+  if (!rows.length) return `Nuk gjeta shitje për "${marka}".`;
+  return JSON.stringify({ periudha: "1 janar deri sot, sivjet kundrejt të njëjtës periudhë vjet; vlera në lekë me TVSH; sasia në kg ose litra; pa setet", formatet: rows });
+}
+
 function system(owner: string, tenant: string): string {
   const today = new Date().toLocaleDateString("sq-AL", { timeZone: "Europe/Tirane", weekday: "long", day: "numeric", month: "long", year: "numeric" });
   return [
     `Ti je THA'NA, partnerja e biznesit e ${owner} për ${tenant} (distributor detergjentesh dhe vajrash në Shqipëri dhe Kosovë). Sot është ${today}.`,
     "Përgjigjja jote do lexohet me zë në një bisedë live. Shkruaj si flet një shqiptare e lindur: e ngrohtë, e drejtpërdrejtë, e zgjuar, me humor të lehtë kur i shkon. Për veten përdor format femërore.",
     "FORMAT I DETYRUESHËM: vetëm tekst i folur. Asnjë markdown, titull, listë, tabelë, emoji, yll apo simbol. Shifrat me fjalë të lexueshme: '20,9 milion lekë', 'rreth 29 për qind'.",
-    "Gjatësia: 1–3 fjali për pyetje të thjeshta; deri në 6–8 fjali kur kërkon analizë, këshillë ose strategji. Mbaro me një pyetje ose propozim vetëm kur ka kuptim.",
+    "Gjatësia: 1–3 fjali për pyetje të thjeshta; deri në 5–6 fjali kur kërkon analizë, këshillë ose strategji. Mbaro me një pyetje ose propozim vetëm kur ka kuptim.",
     "Je e lirë të japësh mendime, ide, këshilla, strategji dhe njohuri të përgjithshme nga mendja jote. Kur është mendim, thuaje si mendim.",
-    "RREGULL I RREPTË: shifrat dhe faktet e kompanisë (shitje, borxhe, fitim, sasi, përqindje, renditje klientësh/agjentësh/produktesh) VETËM nga mjetet pamja_sot ose te_dhenat_thana. Kurrë mos i shpik dhe kurrë mos i merr nga web-i.",
-    "pamja_sot për pyetje për sot/këtë muaj (e shpejtë). te_dhenat_thana për analiza (krahasime, periudha, pse, klientë, produkte); jepi pyetjen qartë në shqip me periudhën e plotë.",
+    "RREGULL I RREPTË: shifrat dhe faktet e kompanisë (shitje, borxhe, fitim, sasi, përqindje, renditje klientësh/agjentësh/produktesh) VETËM nga mjetet pamja_sot, produkt_sipas_peshes ose te_dhenat_thana. Kurrë mos i shpik dhe kurrë mos i merr nga web-i.",
+    "pamja_sot për pyetje për sot/këtë muaj (e shpejtë). produkt_sipas_peshes për ecurinë e një marke sipas peshës/formatit kundrejt vitit të kaluar (e shpejtë; thuaj cilat formate bien më shumë dhe cilat rriten). te_dhenat_thana për analiza (krahasime, periudha, pse, klientë, produkte); jepi pyetjen qartë në shqip me periudhën e plotë.",
     `Nëse mjeti thotë që nuk e verifikoi dot, thuaje sinqerisht me një fjali dhe propozo një pyetje më të ngushtë (p.sh. vetëm një produkt ose një muaj). Mos e provo të njëjtën gjë më shumë se një herë.`,
     "web_search vetëm për informacion të freskët jashtë kompanisë (lajme, kurse këmbimi, çmime tregu, ligje, taksa, moti, konkurrentë) dhe thuaj burimin shkurt.",
   ].join("\n");
@@ -85,10 +108,11 @@ function system(owner: string, tenant: string): string {
 const tools = [
   { name: "pamja_sot", description: "Pamja e sotme e biznesit nga THA'NA OS: shitjet sot/muaji, shëndeti, borxhet, aprovimet, agjentët sot, sinjalet.", input_schema: { type: "object", properties: {} } },
   { name: "te_dhenat_thana", description: "Pyetje analitike te Truri THA'NA mbi të dhënat reale të kompanisë (shitje, klientë, produkte, borxhe, agjentë, rajone, periudha, krahasime).", input_schema: { type: "object", properties: { pyetja: { type: "string" } }, required: ["pyetja"] } },
+  { name: "produkt_sipas_peshes", description: "Ecuria e një marke/produkti sipas formatit (peshës kg ose litrave), nga 1 janari deri sot krahasuar me të njëjtën periudhë vitin e kaluar: vlera, sasia, ndryshimi %. Shembull: marka 'Deka No Comment'. E shpejtë dhe e saktë; përdore për çdo pyetje 'cila peshë/format bie ose rritet'.", input_schema: { type: "object", properties: { marka: { type: "string" } }, required: ["marka"] } },
   { type: "web_search_20250305", name: "web_search", max_uses: 2 },
 ];
 
-async function think(token: string, owner: string, tenant: string, question: string, history: Array<{ role: string; text: string }>): Promise<string> {
+async function think(token: string, tenantId: string | null, owner: string, tenant: string, question: string, history: Array<{ role: string; text: string }>): Promise<string> {
   const messages: any[] = [];
   for (const h of history.slice(-12)) {
     const role = h.role === "user" ? "user" : "assistant";
@@ -120,6 +144,7 @@ async function think(token: string, owner: string, tenant: string, question: str
     for (const b of j.content ?? []) {
       if (b.type !== "tool_use") continue;
       const out = b.name === "pamja_sot" ? await snapshot(token)
+        : b.name === "produkt_sipas_peshes" ? await byWeight(tenantId, String(b.input?.marka ?? ""))
         : b.name === "te_dhenat_thana" ? await brain(token, `${b.input?.pyetja ?? question}\n\n(Pyetje nga biseda me zë: përgjigju shkurt, pa tabela, vetëm shifrat kryesore.)`)
         : "Mjet i panjohur.";
       results.push({ type: "tool_result", tool_use_id: b.id, content: out });
@@ -136,7 +161,7 @@ Deno.serve(async (req) => {
   if (!AKEY) return json({ result: "Mendja e zërit nuk është konfiguruar." });
   try {
     const [who] = await sql.begin("read only", (tx) => tx`
-      select u.full_name, u.role, coalesce(t.display_name, t.legal_name) as tenant
+      select u.full_name, u.role, coalesce(s.tenant_id, u.tenant_id)::text as tenant_id, coalesce(t.display_name, t.legal_name) as tenant
       from app_sessions s join app_users u on u.id = s.user_id
       left join sv_tenants t on t.id = coalesce(s.tenant_id, u.tenant_id)
       where lower(s.token) = lower(${token}) and s.expires_at > now() and coalesce(u.is_active, true)
@@ -150,7 +175,7 @@ Deno.serve(async (req) => {
     const owner = who.full_name ?? "pronari", tenant = who.tenant ?? "biznesin";
 
     let result: string;
-    if (name === "thana_mendo") result = await think(token, owner, tenant, String(args.pyetja ?? ""), history);
+    if (name === "thana_mendo") result = await think(token, who.tenant_id ?? null, owner, tenant, String(args.pyetja ?? ""), history);
     else if (name === "thana_panorama") result = await snapshot(token);
     else if (name === "thana_pyet") result = await brain(token, String(args.pyetja ?? ""));
     else result = "Mjet i panjohur.";
