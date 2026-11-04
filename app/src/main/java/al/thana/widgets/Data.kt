@@ -110,6 +110,18 @@ object Repo {
         }
     } catch (e: Exception) { Result(false, "Nuk u lidh. Asgjë nuk u ndryshua.") }
 
+    /** Hap një bisedë live me zë: kthen çelësin e përkohshëm Gemini + konfigurimin, ose {"error": ...}. */
+    fun voiceSession(ctx: Context): JSONObject = try {
+        val tok = token(ctx) ?: throw IllegalStateException("Sesioni ka mbaruar. Hyr përsëri.")
+        val c = open("/functions/v1/voice-session", "POST")
+        c.setRequestProperty("x-session-token", tok)
+        c.send(JSONObject())
+        val body = c.text()
+        runCatching { JSONObject(body) }.getOrElse { JSONObject().put("error", "Përgjigje e papritur (${c.responseCode}).") }
+            .also { if (c.responseCode == 401) logout(ctx) }
+    } catch (e: IllegalStateException) { JSONObject().put("error", e.message)
+    } catch (e: Exception) { JSONObject().put("error", "Nuk u lidh me THA'NA. Kontrollo internetin.") }
+
     /** Pyetje te THA'NA AI. onText merr tekstin e grumbulluar ndërkohë që vjen. Kthen session_id. */
     fun ask(ctx: Context, question: String, sessionId: String?, onText: (String) -> Unit): String? {
         val tok = token(ctx) ?: run { onText("Sesioni ka mbaruar. Hyr përsëri."); return sessionId }

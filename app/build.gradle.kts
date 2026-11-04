@@ -10,8 +10,8 @@ android {
         applicationId = "al.thana.widgets"
         minSdk = 26
         targetSdk = 34
-        versionCode = 5
-        versionName = "0.5"
+        versionCode = 6
+        versionName = "0.6"
         // THA'NA live (SalesVision AI). Anon key is public by design; access is gated by the PWA session.
         buildConfigField("String", "SUPABASE_URL", "\"https://hrnnlstxepjigtmfhpny.supabase.co\"")
         buildConfigField("String", "ANON_KEY", "\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imhybm5sc3R4ZXBqaWd0bWZocG55Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzMjY1MDcsImV4cCI6MjA4NjkwMjUwN30.abEcQQd4NwB1AnMeyB8ieUt84dnm-Y90scEKOVIhjys\"")
@@ -33,6 +33,8 @@ dependencies {
     // Widget-et dhe sinkronizimi
     implementation("androidx.glance:glance-appwidget:1.1.1")
     implementation("androidx.work:work-runtime-ktx:2.9.1")
+    // Bisedë live me zë (WebSocket)
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
     // Teste
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20231013")

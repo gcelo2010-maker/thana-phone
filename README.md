@@ -1,4 +1,4 @@
-# THA'NA Phone · Android (telefon + tablet) · v0.5
+# THA'NA Phone · Android (telefon + tablet) · v0.6
 
 Android vetëm shfaq dhe kërkon. Shifrat, lejet dhe vendimet i konfirmon THA'NA OS (SalesVision AI).
 
@@ -6,7 +6,7 @@ Android vetëm shfaq dhe kërkon. Shifrat, lejet dhe vendimet i konfirmon THA'NA
 - **App:** Hyrje (PIN si PWA) · Sot · Financa · Shitje · Aprovime · THA'NA AI · Cilësime
 - **Tablet:** menu anësore + përmbajtja (≥600dp), edhe në landscape
 - **9 widget-e:** Shitjet sot (1×1) · Shëndeti (2×1) · Të arkëtueshme (2×2) · Aprovime (4×1) · Sinjale (4×2) · Shitjet 14 ditë (2×2) · Pyet THA'NA (4×1) · Agjentët sot (4×2) · Fol me THA'NA (1×1)
-- **Bisedë me zë:** widget-i 🎤, butoni te THA'NA AI, ose shtyp gjatë ikonën → "Fol me THA'NA". Njohje zëri sq-AL → `brain-chat` → zë shqip, fjali pas fjalie; pas përgjigjes dëgjon përsëri.
+- **Bisedë live me zë:** Gemini Live (`gemini-3.8-live`, speech-to-speech) me Trurin THA'NA si mjete (`thana_panorama` → owner-snapshot, `thana_pyet` → brain-chat). Mikrofoni transmetohet vazhdimisht, THA'NA përgjigjet live dhe mund ta ndërpresësh. Çelësi Gemini mbetet në server: `voice-session` jep një çelës të përkohshëm (2 përdorime, 30 min). Rezervë: modaliteti i thjeshtë me zërin e telefonit.
 - **Launcher:** Cilësime → "THA'NA si ekran kryesor"
 
 ## Lidhja me THA'NA (pa ndryshime në tabela/funksione ekzistuese)

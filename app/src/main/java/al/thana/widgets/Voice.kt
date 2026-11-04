@@ -35,6 +35,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -59,6 +60,24 @@ import java.util.Locale
 enum class VState { Idle, Listening, Thinking, Speaking }
 data class Turn(val mine: Boolean, val text: String)
 
+/** E përbashkët për bisedën live (Gemini) dhe modalitetin e thjeshtë (zëri i telefonit). */
+interface VoiceSession {
+    val state: MutableState<VState>
+    val partial: MutableState<String>
+    val level: MutableFloatState
+    val turns: SnapshotStateList<Turn>
+    val message: MutableState<String?>
+    val toggle: MutableState<Boolean>
+    val toggleLabel: String
+    val title: String
+    fun statusText(): String
+    fun onToggle(v: Boolean) { toggle.value = v }
+    fun start()
+    fun tap()
+    fun stop()
+    fun release()
+}
+
 /** Teksti i përgjigjes → tekst i lexueshëm me zë në shqip. */
 fun speechify(t: String): String {
     var s = t.replace(Regex("[*#_`>|]"), " ")
@@ -74,14 +93,21 @@ fun speechify(t: String): String {
 }
 
 /** Bisedë me zë: njohje zëri (sq-AL) → brain-chat (stream) → zë, fjali pas fjalie. */
-class VoiceEngine(private val ctx: Context) : RecognitionListener, TextToSpeech.OnInitListener {
+class VoiceEngine(private val ctx: Context) : VoiceSession, RecognitionListener, TextToSpeech.OnInitListener {
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
-    val state = mutableStateOf(VState.Idle)
-    val partial = mutableStateOf("")
-    val level = mutableFloatStateOf(0f)
-    val turns = mutableStateListOf<Turn>()
-    val message = mutableStateOf<String?>(null)
-    val conversation = mutableStateOf(true)
+    override val state = mutableStateOf(VState.Idle)
+    override val partial = mutableStateOf("")
+    override val level = mutableFloatStateOf(0f)
+    override val turns = mutableStateListOf<Turn>()
+    override val message = mutableStateOf<String?>(null)
+    override val toggle = mutableStateOf(true)          // bisedë e vazhdueshme
+    override val toggleLabel = "Bisedë e vazhdueshme"
+    override val title = "Modaliteti i thjeshtë"
+    override fun statusText() = when (state.value) {
+        VState.Listening -> "Po dëgjoj…"; VState.Thinking -> "THA'NA po analizon të dhënat…"
+        VState.Speaking -> "THA'NA po flet · prek orb-in për ta ndërprerë"; VState.Idle -> "Prek orb-in për të folur"
+    }
+    override fun start() = listen()
 
     private var session: String? = null
     private var recognizer: SpeechRecognizer? = null
@@ -129,16 +155,16 @@ class VoiceEngine(private val ctx: Context) : RecognitionListener, TextToSpeech.
     }
 
     /** Prekja e orb-it: ndalon dëgjimin, ose ndërpret THA'NA-n dhe të dëgjon ty. */
-    fun tap() {
+    override fun tap() {
         when (state.value) {
             VState.Listening -> recognizer?.stopListening()
             else -> listen()
         }
     }
 
-    fun stop() { turnId++; job?.cancel(); tts.stop(); recognizer?.cancel(); pending = 0; state.value = VState.Idle }
+    override fun stop() { turnId++; job?.cancel(); tts.stop(); recognizer?.cancel(); pending = 0; state.value = VState.Idle }
 
-    fun release() { stop(); scope.cancel(); recognizer?.destroy(); tts.shutdown() }
+    override fun release() { stop(); scope.cancel(); recognizer?.destroy(); tts.shutdown() }
 
     private fun ask(q: String) {
         val my = ++turnId
@@ -186,7 +212,7 @@ class VoiceEngine(private val ctx: Context) : RecognitionListener, TextToSpeech.
     private fun finishIfDone() {
         if (!streamDone || pending > 0) return
         state.value = VState.Idle
-        if (conversation.value) scope.launch { delay(350); if (state.value == VState.Idle) listen() }
+        if (toggle.value) scope.launch { delay(350); if (state.value == VState.Idle) listen() }
     }
 
     // --- RecognitionListener
@@ -219,25 +245,38 @@ class VoiceEngine(private val ctx: Context) : RecognitionListener, TextToSpeech.
 }
 
 class VoiceActivity : ComponentActivity() {
-    private lateinit var engine: VoiceEngine
+    private val current = mutableStateOf<VoiceSession?>(null)
+    private lateinit var askMic: androidx.activity.result.ActivityResultLauncher<String>
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        engine = VoiceEngine(this)
-        val ask = registerForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
-            if (ok) engine.listen() else engine.message.value = "Pa mikrofon nuk mund të flasësh me THA'NA. Lejoje te Cilësime → Apps → THA'NA."
+        current.value = LiveEngine(this)
+        askMic = registerForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
+            if (ok) current.value?.start()
+            else current.value?.message?.value = "Pa mikrofon nuk mund të flasësh me THA'NA. Lejoje te Cilësime → Apps → THA'NA."
         }
-        setContent { ThanaTheme { VoiceScreen(engine) { finish() } } }
+        setContent {
+            ThanaTheme {
+                current.value?.let { e ->
+                    VoiceScreen(e, onClose = { finish() },
+                        onFallback = if (e is LiveEngine) ({ switchToSimple() }) else null)
+                }
+            }
+        }
         when {
-            Repo.token(this) == null -> engine.message.value = "Hyr në THA'NA para se të flasësh."
-            checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED -> engine.listen()
-            else -> ask.launch(Manifest.permission.RECORD_AUDIO)
+            Repo.token(this) == null -> current.value?.message?.value = "Hyr në THA'NA para se të flasësh."
+            checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED -> current.value?.start()
+            else -> askMic.launch(Manifest.permission.RECORD_AUDIO)
         }
     }
 
-    override fun onPause() { super.onPause(); if (isFinishing) engine.stop() }
-    override fun onDestroy() { engine.release(); super.onDestroy() }
+    private fun switchToSimple() {
+        current.value?.release()
+        current.value = VoiceEngine(this).also { it.start() }
+    }
+
+    override fun onDestroy() { current.value?.release(); super.onDestroy() }
 }
 
 @Composable
@@ -266,29 +305,26 @@ fun VoiceOrb(state: VState, level: Float, onTap: () -> Unit) {
 }
 
 @Composable
-fun VoiceScreen(e: VoiceEngine, onClose: () -> Unit) {
+fun VoiceScreen(e: VoiceSession, onClose: () -> Unit, onFallback: (() -> Unit)? = null) {
     val list = rememberLazyListState()
     LaunchedEffect(e.turns.size, e.turns.lastOrNull()?.text?.length) { if (e.turns.isNotEmpty()) list.scrollToItem(e.turns.lastIndex) }
     Column(Modifier.fillMaxSize().background(T.Bg).systemBarsPadding().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("THA'NA · TRURI", style = T.Label.copy(color = T.Brass))
-                Text("Bisedë me zë", style = T.Title.copy(fontSize = 24.sp))
+                Text(e.title, style = T.Title.copy(fontSize = 24.sp))
             }
             IconButton({ e.stop(); onClose() }, Modifier.size(48.dp)) { Icon(Icons.Filled.Close, "Mbyll", tint = T.Muted) }
         }
         Spacer(Modifier.height(8.dp))
         VoiceOrb(e.state.value, e.level.floatValue) { e.tap() }
-        Text(
-            when (e.state.value) {
-                VState.Listening -> "Po dëgjoj…"; VState.Thinking -> "THA'NA po analizon të dhënat…"
-                VState.Speaking -> "THA'NA po flet · prek orb-in për ta ndërprerë"; VState.Idle -> "Prek orb-in për të folur"
-            }, style = T.Small.copy(fontSize = 13.sp),
-        )
+        Text(e.statusText(), style = T.Small.copy(fontSize = 13.sp))
         if (e.partial.value.isNotBlank()) Text("“${e.partial.value}”", style = T.Body.copy(fontStyle = FontStyle.Italic, color = T.Muted), modifier = Modifier.padding(top = 8.dp))
         e.message.value?.let {
             Text(it, style = T.Small.copy(color = T.Warn), modifier = Modifier.padding(top = 10.dp).fillMaxWidth()
                 .clip(RoundedCornerShape(14.dp)).background(T.Surface).padding(12.dp))
+            if (onFallback != null && e.state.value == VState.Idle)
+                TextButton(onFallback) { Text("Provo modalitetin e thjeshtë (zëri i telefonit)", color = T.Brass) }
         }
         LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(top = 12.dp), state = list, verticalArrangement = Arrangement.spacedBy(8.dp)) {
             if (e.turns.isEmpty()) item {
@@ -303,8 +339,8 @@ fun VoiceScreen(e: VoiceEngine, onClose: () -> Unit) {
             }
         }
         Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("Bisedë e vazhdueshme", style = T.Body, modifier = Modifier.weight(1f))
-            Switch(e.conversation.value, { e.conversation.value = it },
+            Text(e.toggleLabel, style = T.Body, modifier = Modifier.weight(1f))
+            Switch(e.toggle.value, { e.onToggle(it) },
                 colors = SwitchDefaults.colors(checkedThumbColor = T.OnBrass, checkedTrackColor = T.Brass))
         }
         Text("Shifrat vijnë nga THA'NA OS. Zëri vetëm i lexon.", style = T.Small.copy(fontSize = 11.sp), modifier = Modifier.padding(top = 4.dp))

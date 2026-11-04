@@ -1,6 +1,7 @@
 name: Build APK
 on:
   push:
+    branches: [main]
   workflow_dispatch:
 permissions:
   contents: write
@@ -13,11 +14,28 @@ jobs:
         with: { distribution: temurin, java-version: "17" }
       - uses: gradle/actions/setup-gradle@v4
         with: { gradle-version: "8.9" }
-      - run: gradle testDebugUnitTest assembleDebug
+      - name: Test and build
+        run: |
+          set -o pipefail
+          gradle testDebugUnitTest assembleDebug --console=plain 2>&1 | tee build.log
+      # Publik: kur ndërtimi dështon, ruaj gabimet në degën ci-logs që të lexohen pa hyrje.
+      - name: Publish build errors
+        if: failure()
+        run: |
+          grep -nE "^e: |error:|FAILED|What went wrong|Caused by|\.kt:[0-9]+" build.log | head -200 > errors.txt || true
+          tail -120 build.log >> errors.txt
+          git config user.name "github-actions"; git config user.email "actions@users.noreply.github.com"
+          git checkout --orphan ci-logs
+          git rm -rfq --cached . ; mkdir -p /tmp/keep && cp errors.txt /tmp/keep/
+          find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          cp /tmp/keep/errors.txt errors.txt
+          echo "run ${{ github.run_number }} · ${{ github.sha }}" > run.txt
+          git add errors.txt run.txt && git commit -qm "CI errors for run ${{ github.run_number }}"
+          git push -f origin ci-logs
       - run: mv app/build/outputs/apk/debug/app-debug.apk thana-widgets.apk
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}
-          name: THA'NA Widgets ${{ github.run_number }}
+          name: THA'NA Phone ${{ github.run_number }}
           files: thana-widgets.apk
           make_latest: true
