@@ -26,6 +26,23 @@ object Repo {
     fun logout(ctx: Context) {
         Secure.clear(ctx)
         File(ctx.filesDir, CACHE).delete()   // vlerat e mbrojtura hiqen edhe nga widget-et
+        File(ctx.filesDir, MEMO).delete()    // kujtesa e bisedës me zë
+    }
+
+    const val MEMO = "voice_memo.json"
+
+    /** Kujtesa e bisedës me zë (vetëm në telefon): pyetjet dhe përgjigjet e fundit, mbahet edhe pas mbylljes. */
+    fun loadMemo(ctx: Context): List<Turn> = runCatching {
+        val a = JSONArray(File(ctx.filesDir, MEMO).readText())
+        (0 until a.length()).map { a.getJSONObject(it).let { o -> Turn(o.getBoolean("u"), o.getString("t")) } }
+    }.getOrElse { emptyList() }
+
+    fun saveMemo(ctx: Context, memo: List<Turn>) {
+        val a = JSONArray()
+        memo.takeLast(40).forEach { a.put(JSONObject().put("u", it.mine).put("t", it.text.take(2000))) }
+        runCatching {
+            val tmp = File(ctx.filesDir, "$MEMO.tmp"); tmp.writeText(a.toString()); tmp.renameTo(File(ctx.filesDir, MEMO))
+        }
     }
 
     private fun open(path: String, method: String = "GET"): HttpURLConnection =

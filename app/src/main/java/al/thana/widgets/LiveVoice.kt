@@ -49,7 +49,7 @@ class LiveEngine(private val ctx: Context, private val preferred: String = "open
     override val level = mutableFloatStateOf(0f)
     override val turns = mutableStateListOf<Turn>()
     /** Kujtesa e bisedës për Claude: pyetjet dhe përgjigjet e plota (edhe kur zëri ndërpritet). */
-    private val memo = mutableListOf<Turn>()
+    private val memo = Repo.loadMemo(ctx).toMutableList()
     override val message = mutableStateOf<String?>(null)
     override val toggle = mutableStateOf(true)            // mikrofoni hapur
     override val toggleLabel = "Mikrofoni"
@@ -183,6 +183,12 @@ class LiveEngine(private val ctx: Context, private val preferred: String = "open
             "session.created" -> {
                 setupDone = true; connected = true; message.value = null
                 startAudio(); state.value = VState.Listening
+                synchronized(memo) { memo.takeLast(6).toList() }.takeIf { it.isNotEmpty() }?.let { last ->
+                    val ctxText = "Biseda e fundit me pronarin (për kontekst, mos e lexo):\n" +
+                        last.joinToString("\n") { (if (it.mine) "Ai: " else "THA'NA: ") + it.text.take(400) }
+                    send(JSONObject().put("type", "conversation.item.create").put("item", JSONObject().put("type", "message").put("role", "system")
+                        .put("content", JSONArray().put(JSONObject().put("type", "input_text").put("text", ctxText)))))
+                }
                 cfg?.optString("greeting")?.takeIf { it.isNotBlank() }?.let { g ->
                     send(JSONObject().put("type", "conversation.item.create").put("item", JSONObject().put("type", "message").put("role", "user")
                         .put("content", JSONArray().put(JSONObject().put("type", "input_text").put("text", g)))))
@@ -251,7 +257,7 @@ class LiveEngine(private val ctx: Context, private val preferred: String = "open
     }
 
     private fun runTool(id: String, name: String, args: JSONObject) {
-            val history = synchronized(memo) { memo.takeLast(16).toList() }
+            val history = synchronized(memo) { memo.takeLast(30).toList() }
             turns += Turn(false, when (name) {
                 "thana_mendo" -> "⟳ Po mendoj…"
                 "thana_pyet" -> "⟳ Truri THA'NA: ${args.optString("pyetja")}"
@@ -264,7 +270,11 @@ class LiveEngine(private val ctx: Context, private val preferred: String = "open
                     when (name) {
                         // v0.8: çdo pyetje e vërtetë përgjigjet nga Claude në server (me THA'NA + web).
                         "thana_mendo" -> Repo.voiceTool(ctx, name, args, history).also {
-                            synchronized(memo) { memo += Turn(true, args.optString("pyetja")); memo += Turn(false, it) }
+                            synchronized(memo) {
+                                memo += Turn(true, args.optString("pyetja")); memo += Turn(false, it)
+                                while (memo.size > 40) memo.removeAt(0)
+                                Repo.saveMemo(ctx, memo)
+                            }
                         }
                         "thana_panorama" -> panorama()
                         "thana_pyet" -> {
