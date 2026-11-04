@@ -1,6 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <queries>
+        <intent><action android:name="android.speech.RecognitionService" /></intent>
+        <intent><action android:name="android.intent.action.TTS_SERVICE" /></intent>
+    </queries>
     <application android:label="THA'NA" android:icon="@android:drawable/sym_def_app_icon"
         android:theme="@android:style/Theme.Material.NoActionBar" android:allowBackup="false">
 
@@ -11,7 +16,12 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <meta-data android:name="android.app.shortcuts" android:resource="@xml/shortcuts" />
         </activity>
+
+        <activity android:name=".VoiceActivity" android:exported="true" android:launchMode="singleTask"
+            android:taskAffinity="al.thana.voice" android:excludeFromRecents="true"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden" />
 
         <!-- THA'NA si Home (launcher). Fikur si parazgjedhje; aktivizohet nga Cilësime. -->
         <activity-alias android:name=".HomeAlias" android:targetActivity=".MainActivity"
@@ -49,6 +59,14 @@
         <receiver android:name=".AskReceiver" android:exported="true" android:label="THA'NA · Pyet THA'NA">
             <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/w_ask" />
+        </receiver>
+        <receiver android:name=".AgentsReceiver" android:exported="true" android:label="THA'NA · Agjentët sot">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/w_agents" />
+        </receiver>
+        <receiver android:name=".VoiceReceiver" android:exported="true" android:label="THA'NA · Fol me THA'NA">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/w_voice" />
         </receiver>
     </application>
 </manifest>

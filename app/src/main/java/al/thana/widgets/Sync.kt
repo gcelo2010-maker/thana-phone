@@ -59,5 +59,6 @@ object Widgets {
         AlertsWidget().updateAll(c)
         TrendWidget().updateAll(c)
         AskWidget().updateAll(c)
+        AgentsWidget().updateAll(c)
     }
 }

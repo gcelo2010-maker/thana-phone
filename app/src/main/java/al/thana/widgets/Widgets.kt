@@ -104,6 +104,21 @@ object Draw {
         return b
     }
 
+    fun orb(size: Int = 240): Bitmap {
+        val b = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val cv = Canvas(b); val r = size / 2f
+        cv.drawCircle(r, r, r * 0.96f, Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            shader = android.graphics.RadialGradient(size * 0.38f, size * 0.32f, r * 1.1f,
+                intArrayOf(T.Ink.toArgb(), T.Brass.toArgb(), (T.Brass.toArgb() and 0x00FFFFFF) or 0x99000000.toInt()),
+                floatArrayOf(0f, 0.45f, 1f), Shader.TileMode.CLAMP)
+        })
+        val p = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = size * 0.045f; color = T.OnBrass.toArgb(); strokeCap = Paint.Cap.ROUND }
+        cv.drawRoundRect(RectF(size * 0.42f, size * 0.24f, size * 0.58f, size * 0.54f), size * 0.08f, size * 0.08f, p)
+        cv.drawArc(RectF(size * 0.33f, size * 0.36f, size * 0.67f, size * 0.64f), 0f, 180f, false, p)
+        cv.drawLine(r, size * 0.64f, r, size * 0.74f, p)
+        return b
+    }
+
     fun trend(points: List<Point>, w: Int = 640, h: Int = 240): Bitmap {
         val b = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
         if (points.size < 2) return b
@@ -250,6 +265,48 @@ class AskWidget : GlanceAppWidget() {
     }
 }
 
+// 4×2 · Agjentët sot
+class AgentsWidget : GlanceAppWidget() {
+    override suspend fun provideGlance(context: Context, id: GlanceId) {
+        val (s, logged) = state(context)
+        provideContent {
+            Card(context, "AGJENTËT SOT", s, logged, tab = "shitje") { snap ->
+                if (snap.agents.isEmpty()) Small("Ende pa shitje sot")
+                snap.agents.take(5).forEachIndexed { i, a ->
+                    Row(GlanceModifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("${i + 1}", style = TextStyle(color = c(if (i == 0) T.Brass else T.Muted), fontSize = 12.sp, fontWeight = FontWeight.Bold))
+                        Spacer(GlanceModifier.width(8.dp))
+                        Text(a.name, maxLines = 1, style = TextStyle(color = c(T.Ink), fontSize = 13.sp), modifier = GlanceModifier.defaultWeight())
+                        Text(Money.compact(a.today), style = TextStyle(color = c(T.Ink), fontSize = 13.sp, fontWeight = FontWeight.Bold))
+                        Spacer(GlanceModifier.width(6.dp))
+                        val d = a.delta
+                        Text(if (d == null) "  —" else if (d >= 0) "▲" else "▼",
+                            style = TextStyle(color = c(if (d == null) T.Muted else if (d >= 0) T.Good else T.Bad), fontSize = 11.sp))
+                    }
+                }
+                if (snap.agents.size > 5) Small("+${snap.agents.size - 5} të tjerë")
+            }
+        }
+    }
+}
+
+// 1×1 · Fol me THA'NA (bisedë me zë)
+class VoiceWidget : GlanceAppWidget() {
+    override suspend fun provideGlance(context: Context, id: GlanceId) {
+        val orb = Draw.orb()
+        provideContent {
+            Column(
+                GlanceModifier.fillMaxSize().background(T.Surface).cornerRadius(28.dp).padding(8.dp)
+                    .clickable(actionStartActivity(Intent(context, VoiceActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))),
+                horizontalAlignment = Alignment.CenterHorizontally, verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Image(ImageProvider(orb), "Fol me THA'NA", GlanceModifier.size(52.dp))
+                Text("Fol", style = TextStyle(color = c(T.Ink), fontSize = 11.sp, fontWeight = FontWeight.Bold))
+            }
+        }
+    }
+}
+
 // ---------- Receivers ----------
 abstract class BaseReceiver : GlanceAppWidgetReceiver() {
     override fun onUpdate(context: Context, mgr: AppWidgetManager, ids: IntArray) {
@@ -266,3 +323,5 @@ class ApprovalsReceiver : BaseReceiver() { override val glanceAppWidget: GlanceA
 class AlertsReceiver : BaseReceiver() { override val glanceAppWidget: GlanceAppWidget = AlertsWidget() }
 class TrendReceiver : BaseReceiver() { override val glanceAppWidget: GlanceAppWidget = TrendWidget() }
 class AskReceiver : BaseReceiver() { override val glanceAppWidget: GlanceAppWidget = AskWidget() }
+class AgentsReceiver : BaseReceiver() { override val glanceAppWidget: GlanceAppWidget = AgentsWidget() }
+class VoiceReceiver : BaseReceiver() { override val glanceAppWidget: GlanceAppWidget = VoiceWidget() }

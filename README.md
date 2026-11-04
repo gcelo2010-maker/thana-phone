@@ -1,11 +1,12 @@
-# THA'NA Phone · Android (telefon + tablet) · v0.3
+# THA'NA Phone · Android (telefon + tablet) · v0.5
 
 Android vetëm shfaq dhe kërkon. Shifrat, lejet dhe vendimet i konfirmon THA'NA OS (SalesVision AI).
 
 ## Çfarë ka
 - **App:** Hyrje (PIN si PWA) · Sot · Financa · Shitje · Aprovime · THA'NA AI · Cilësime
 - **Tablet:** menu anësore + përmbajtja (≥600dp), edhe në landscape
-- **7 widget-e:** Shitjet sot (1×1) · Shëndeti (2×1) · Të arkëtueshme (2×2) · Aprovime (4×1) · Sinjale (4×2) · Shitjet 14 ditë (2×2) · Pyet THA'NA (4×1)
+- **9 widget-e:** Shitjet sot (1×1) · Shëndeti (2×1) · Të arkëtueshme (2×2) · Aprovime (4×1) · Sinjale (4×2) · Shitjet 14 ditë (2×2) · Pyet THA'NA (4×1) · Agjentët sot (4×2) · Fol me THA'NA (1×1)
+- **Bisedë me zë:** widget-i 🎤, butoni te THA'NA AI, ose shtyp gjatë ikonën → "Fol me THA'NA". Njohje zëri sq-AL → `brain-chat` → zë shqip, fjali pas fjalie; pas përgjigjes dëgjon përsëri.
 - **Launcher:** Cilësime → "THA'NA si ekran kryesor"
 
 ## Lidhja me THA'NA (pa ndryshime në tabela/funksione ekzistuese)

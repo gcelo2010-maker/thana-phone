@@ -73,7 +73,33 @@ Deno.serve(async (req) => {
               group by customer_name order by 2 desc limit 5) x)
         ) as snap`;
 
-      return { who, pulse, snap };
+      // Agjentët sot: shitjet e sotme për agjent kundrejt së njëjtës ditë javën e kaluar.
+      const [{ agents }] = await tx`
+        with d as (select (now() at time zone 'Europe/Tirane')::date t),
+        s as (
+          select salesperson_code::text code,
+                 sum(total_value) filter (where sale_date = d.t) today,
+                 sum(total_value) filter (where sale_date = d.t - 7) last_week,
+                 count(distinct customer_code) filter (where sale_date = d.t) clients
+          from sv_sales, d
+          where coalesce(is_cancelled, false) = false and sale_date in (d.t, d.t - 7) and salesperson_code is not null
+          group by 1)
+        select coalesce(jsonb_agg(x order by (x->>'today')::numeric desc), '[]'::jsonb) as agents from (
+          select jsonb_build_object(
+            'code', s.code,
+            'name', coalesce(a.full_name, m.full_name, 'Agjenti ' || s.code),
+            'zone', a.zone_name,
+            'today', round(coalesce(s.today, 0)),
+            'last_week', round(coalesce(s.last_week, 0)),
+            'clients', coalesce(s.clients, 0)) x
+          from s
+          left join lateral (select full_name, zone_name from sv_agents
+                             where sadn_force_shitese_id::text = s.code and coalesce(is_test, false) = false
+                             order by is_active desc limit 1) a on true
+          left join lateral (select full_name from sv_agent_identity_map where sadn_id::text = s.code limit 1) m on true
+          where coalesce(s.today, 0) > 0) q`;
+
+      return { who, pulse, snap: { ...snap, agents_list: agents } };
     });
 
     if (!out) return json({ error: "Sesion i pavlefshëm ose rol i pamjaftueshëm." }, 403);
@@ -108,6 +134,7 @@ Deno.serve(async (req) => {
         today,
         same_day_last_week_full: lastWeek,
         agents_today: snap.agents_today,
+        agents: snap.agents_list ?? [],
         mtd: pulse?.revenue?.value ?? null,
         mtd_delta_pct: revDelta,
         series14: snap.series14 ?? [],

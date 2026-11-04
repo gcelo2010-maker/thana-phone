@@ -6,4 +6,7 @@
     <string name="d_alerts">Sinjalet e THA\'NA</string>
     <string name="d_trend">Shitjet e 14 ditëve të fundit</string>
     <string name="d_ask">Pyet THA\'NA AI</string>
+    <string name="d_agents">Renditja e agjentëve sipas shitjeve të sotme</string>
+    <string name="d_voice">Bisedë me zë me Trurin THA\'NA</string>
+    <string name="sc_voice">Fol me THA\'NA</string>
 </resources>

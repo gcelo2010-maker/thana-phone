@@ -39,6 +39,10 @@ data class Approval(
     val value: Double?, val createdAt: String?, val customer: String?, val agent: String?,
 )
 data class Signal(val severity: String, val title: String, val at: String?)
+data class AgentDay(val code: String, val name: String, val zone: String?, val today: Double?, val lastWeek: Double?, val clients: Int?) {
+    /** Ndryshimi % kundrejt së njëjtës ditë javën e kaluar; null kur s'ka bazë krahasimi. */
+    val delta: Double? get() = if (today != null && lastWeek != null && lastWeek > 0) (today - lastWeek) / lastWeek * 100 else null
+}
 
 /** Snapshot i plotë nga owner-snapshot. Fushat që mungojnë mbeten null (jo 0). */
 data class Snapshot(
@@ -48,7 +52,7 @@ data class Snapshot(
     val debtsFreshness: String?,
     val health: Int?,
     val hSales: Int?, val hLiquidity: Int?, val hCollections: Int?,
-    val salesToday: Double?, val salesLastWeek: Double?, val agentsToday: Int?,
+    val salesToday: Double?, val salesLastWeek: Double?, val agentsToday: Int?, val agents: List<AgentDay>,
     val mtd: Double?, val mtdDelta: Double?, val series: List<Point>,
     val recvTotal: Double?, val overdue: Double?, val overduePct: Double?, val overdueCustomers: Int?,
     val dso: Double?, val dsoTarget: Double?, val debtors: List<Debtor>,
@@ -79,6 +83,9 @@ data class Snapshot(
                 salesDate = fr.s("sales"), debtsFreshness = fr.s("debts"),
                 health = h.i("score"), hSales = hc.i("shitje"), hLiquidity = hc.i("likuiditet"), hCollections = hc.i("arketime"),
                 salesToday = s.d("today"), salesLastWeek = s.d("same_day_last_week_full"), agentsToday = s.i("agents_today"),
+                agents = s.arr("agents").map {
+                    AgentDay(it.optString("code"), it.optString("name"), it.s("zone"), it.d("today"), it.d("last_week"), it.i("clients"))
+                },
                 mtd = s.d("mtd"), mtdDelta = s.d("mtd_delta_pct"),
                 series = s.arr("series14").map { Point(it.optString("d"), it.optDouble("v")) },
                 recvTotal = r.d("total"), overdue = r.d("overdue"), overduePct = r.d("overdue_pct"),

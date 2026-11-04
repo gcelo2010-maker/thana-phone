@@ -404,7 +404,30 @@ fun SalesScreen(s: Snapshot?) {
                 CardBox(Modifier.weight(1f)) { Lbl("Agjentë që shitën sot"); Text(s?.agentsToday?.toString() ?: "—", style = T.Title) }
             }
             CardBox(Modifier.fillMaxWidth()) {
-                Lbl("Rajone, kanale, agjentë")
+                Lbl("Agjentët sot · vs e njëjta ditë javën e kaluar")
+                if (s?.agents.isNullOrEmpty()) Text("Ende pa shitje sot.", style = T.Small)
+                val top = s?.agents?.maxOfOrNull { it.today ?: 0.0 }?.coerceAtLeast(1.0) ?: 1.0
+                s?.agents?.forEachIndexed { i, a ->
+                    Column(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("${i + 1}", style = T.Num.copy(color = if (i == 0) T.Brass else T.Muted), modifier = Modifier.width(22.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(a.name, style = T.Body, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text("${a.zone ?: "—"} · ${a.clients ?: "—"} klientë", style = T.Small)
+                            }
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text(Money.full(a.today), style = T.Num)
+                                Delta(a.delta)
+                            }
+                        }
+                        Box(Modifier.fillMaxWidth().padding(start = 22.dp).height(4.dp).clip(RoundedCornerShape(2.dp)).background(T.Border)) {
+                            Box(Modifier.fillMaxWidth(((a.today ?: 0.0) / top).toFloat().coerceIn(0f, 1f)).fillMaxHeight().background(if (i == 0) T.Brass else T.Good.copy(alpha = 0.7f)))
+                        }
+                    }
+                }
+            }
+            CardBox(Modifier.fillMaxWidth()) {
+                Lbl("Rajone dhe kanale")
                 Text("Vijnë në versionin tjetër, kur t'i shtojmë te owner-snapshot.", style = T.Small)
             }
             Spacer(Modifier.height(12.dp))
@@ -528,6 +551,11 @@ fun AiScreen() {
 
     Column(Modifier.fillMaxSize().imePadding()) {
         Header("THA'NA AI", "Pyet për shitjet, borxhet, klientët")
+        Button({ ctx.startActivity(Intent(ctx, VoiceActivity::class.java)) },
+            colors = ButtonDefaults.buttonColors(containerColor = T.Brass, contentColor = T.OnBrass), shape = RoundedCornerShape(16.dp),
+            modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth().height(56.dp)) {
+            MicGlyph(); Spacer(Modifier.width(10.dp)); Text("Fol me Trurin THA'NA", fontWeight = FontWeight.SemiBold)
+        }
         LazyColumn(Modifier.weight(1f).fillMaxWidth(), state = listState, contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             if (msgs.isEmpty()) item {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -548,6 +576,11 @@ fun AiScreen() {
             OutlinedTextField(input, { input = it }, placeholder = { Text("Pyet diçka…") }, modifier = Modifier.weight(1f),
                 shape = RoundedCornerShape(24.dp), colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = T.Brass, unfocusedBorderColor = T.Border,
                     focusedContainerColor = T.Surface, unfocusedContainerColor = T.Surface))
+            Spacer(Modifier.width(8.dp))
+            FilledIconButton({ ctx.startActivity(Intent(ctx, VoiceActivity::class.java)) }, modifier = Modifier.size(52.dp),
+                colors = IconButtonDefaults.filledIconButtonColors(containerColor = T.Raised, contentColor = T.Brass)) {
+                MicGlyph(color = T.Brass)
+            }
             Spacer(Modifier.width(8.dp))
             FilledIconButton({ send(input) }, enabled = !busy && input.isNotBlank(), modifier = Modifier.size(52.dp),
                 colors = IconButtonDefaults.filledIconButtonColors(containerColor = T.Brass, contentColor = T.OnBrass)) {
@@ -596,7 +629,7 @@ fun SettingsScreen(name: String?, onRefresh: () -> Unit, onLogout: () -> Unit) {
             }
             CardBox(Modifier.fillMaxWidth()) {
                 Lbl("Widget-et")
-                Text("Shtyp gjatë mbi home screen → Widgets → THA'NA: Shitjet sot, Shëndeti, Të arkëtueshme, Aprovime, Sinjale, Shitjet 14 ditë, Pyet THA'NA.", style = T.Small)
+                Text("Shtyp gjatë mbi home screen → Widgets → THA'NA: Shitjet sot, Shëndeti, Të arkëtueshme, Aprovime, Sinjale, Shitjet 14 ditë, Pyet THA'NA, Agjentët sot, Fol me THA'NA.", style = T.Small)
             }
             CardBox(Modifier.fillMaxWidth()) {
                 Lbl("Rreth THA'NA"); Text("THA'NA Phone ${BuildConfig.VERSION_NAME}", style = T.Body)
