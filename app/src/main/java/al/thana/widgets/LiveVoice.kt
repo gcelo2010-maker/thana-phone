@@ -104,6 +104,7 @@ class LiveEngine(private val ctx: Context, private val preferred: String = "open
     private class Stream(val id: String) { val buf = StringBuilder(); var sentFirst = false; var finished = false; var cancelled = false }
     private var stream: Stream? = null
     private var responseActive = false
+    private var pendingCreate = false   // response.create në pritje: GPT lejon vetëm një përgjigje aktive njëherësh
     private var modelIdx = -1
 
     override fun statusText() = when {
@@ -242,12 +243,15 @@ class LiveEngine(private val ctx: Context, private val preferred: String = "open
                 if (state.value == VState.Speaking || playQ.isNotEmpty()) interrupted()
             }
             "response.created" -> responseActive = true
-            "response.done" -> { modelIdx = -1; userIdx = -1; responseActive = false; pump() }
+            "response.done" -> {
+                modelIdx = -1; userIdx = -1; responseActive = false
+                if (pendingCreate) createResponse() else pump()
+            }
             "response.function_call_arguments.done" -> {
                 val args = runCatching { JSONObject(m.optString("arguments")) }.getOrElse { JSONObject() }
                 runTool(m.optString("call_id"), m.optString("name"), args)
             }
-            "error" -> m.optJSONObject("error")?.optString("message")?.takeIf { it.isNotBlank() && !it.contains("buffer", true) }
+            "error" -> m.optJSONObject("error")?.optString("message")?.takeIf { it.isNotBlank() && !it.contains("buffer", true) && !it.contains("active response", true) }
                 ?.let { message.value = "GPT: $it" }
         }
     }
@@ -310,14 +314,19 @@ class LiveEngine(private val ctx: Context, private val preferred: String = "open
     private fun sendOutput(id: String, text: String, speak: Boolean = true) {
         send(JSONObject().put("type", "conversation.item.create").put("item", JSONObject()
             .put("type", "function_call_output").put("call_id", id).put("output", text)))
-        if (speak) { send(JSONObject().put("type", "response.create")); responseActive = true }
+        if (speak) createResponse()
+    }
+
+    private fun createResponse() {
+        if (responseActive) { pendingCreate = true; return }
+        send(JSONObject().put("type", "response.create")); responseActive = true; pendingCreate = false
     }
 
     private fun sendContinuation(text: String) {
         send(JSONObject().put("type", "conversation.item.create").put("item", JSONObject().put("type", "message").put("role", "system")
             .put("content", JSONArray().put(JSONObject().put("type", "input_text")
                 .put("text", "VAZHDIMI i përgjigjes së THA'NA-s. Lexoje menjëherë, fjalë për fjalë, si vazhdim i drejtpërdrejtë, pa hyrje dhe pa koment: $text")))))
-        send(JSONObject().put("type", "response.create")); responseActive = true
+        createResponse()
     }
 
     /** Dërgon tekstin e gatshëm te zëri: fjalinë e parë sa më shpejt, pastaj vazhdimin kur zëri është i lirë. */
