@@ -74,6 +74,20 @@ async function dbQuery(tenantId: string, query: string): Promise<string> {
   }
 }
 
+/** Të ardhurat e certifikuara nga funksioni kanonik i THA'NA-s (me kontroll të kryqëzuar me SADN). Vetëm lexim. */
+async function revenue(tenantId: string, from: string, to: string, groupBy: string): Promise<string> {
+  const d = /^\d{4}-\d{2}-\d{2}$/;
+  if (!d.test(from) || !d.test(to)) return "Datat duhet të jenë YYYY-MM-DD.";
+  try {
+    const [r] = await sql.begin("read only", (tx) => tx`
+      select brain_revenue_snapshot(${from}::date, ${to}::date, ${tenantId}::uuid, ${groupBy || "none"}, 'both', true) as j`);
+    const out = JSON.stringify(r?.j ?? {});
+    return out.length > 12000 ? out.slice(0, 12000) + " …(e prerë)" : out;
+  } catch (e) {
+    return "Gabim: " + String((e as Error).message ?? e).slice(0, 300);
+  }
+}
+
 /** Pyet Trurin THA'NA (brain-chat, SSE) me sesionin e pronarit. */
 async function brain(token: string, q: string): Promise<string> {
   const r = await fetch(`${SB_URL}/functions/v1/brain-chat`, {
@@ -128,8 +142,9 @@ function system(owner: string, tenant: string): string {
     `Ti je THA'NA, partnerja e biznesit e ${owner} për ${tenant}. Sot është ${today} (${iso}). Je e zgjuar, kurioze, e drejtpërdrejtë dhe e ngrohtë, si një bashkëpunëtore e afërt që e njeh mirë biznesin dhe tregun shqiptar.`,
     "Kjo është një bisedë live me zë që vazhdon: mesazhet e mëparshme janë biseda juaj (edhe nga ditët e kaluara). Mbaje kontekstin: 'po', 'vazhdo', 'pse?', 'po Elbasani?', 'ajo që the' lidhen me sa u tha më parë. Mos thuaj kurrë që nuk e mban mend.",
     "Bashkëpunim fluid: lidh shifrat me idetë dhe me atë që ndodh jashtë (tregu, çmimet, konkurrentët, lajmet). Jep mendimin tënd, propozo hapin e radhës, bëj një pyetje kur ndihmon. Bisedë e lirë për çdo temë, edhe jashtë biznesit.",
-    "FORMAT: tekst që lexohet me zë. Asnjë markdown, listë, tabelë, emoji apo simbol. Numrat të rrumbullakuar dhe të lexueshëm: '20,9 milion lekë', 'rreth 26 për qind'. Gjatësia: 1–3 fjali për gjëra të thjeshta, 4–7 për analiza; pa përsëritje.",
-    "SHIFRAT E KOMPANISË: vetëm nga mjetet, kurrë nga kujtesa apo web-i. Për çdo pyetje me të dhëna përdor lexim_db (SQL live, i sakti dhe i shpejti). pamja_sot për një përmbledhje të sotme. te_dhenat_thana vetëm kur të duhet logjika e Trurit THA'NA (parashikime, sinjale).",
+    "FORMAT: tekst që lexohet me zë. Asnjë markdown, listë, tabelë, emoji apo simbol. Numrat të rrumbullakuar dhe të lexueshëm: '20,9 milion lekë', 'rreth 26 për qind'. Gjatësia: 1–3 fjali për gjëra të thjeshta, 3–5 për analiza (gjëja kryesore e para); pastaj propozo të shkosh më thellë në vend që të thuash gjithçka menjëherë.",
+    "SHIFRAT E KOMPANISË: vetëm nga mjetet, kurrë nga kujtesa apo web-i. Totalet e shitjeve/të ardhurave për një periudhë (dhe krahasimi me periudhën e mëparshme) VETËM nga te_ardhurat_certifikuara: është burimi zyrtar i THA'NA-s, i kontrolluar me SADN; thuaj shkurt që shifra është e verifikuar. Për ndarje të tjera (klientë, produkte, pesha, borxhe, agjentë) përdor lexim_db dhe kur ka rëndësi thuaj që është lexim direkt. pamja_sot për një përmbledhje të sotme. te_dhenat_thana vetëm për parashikime dhe sinjale të Trurit THA'NA.",
+    "SAKTËSIA: mos thuaj si fakt asgjë që nuk e ke kontrolluar (ditë pune, kalendari, shkaqe). Nëse është hamendje, thuaje 'ndoshta' ose kontrolloje me një query para se ta thuash.",
     "lexim_db: shkruaj një SELECT të vetëm (pa ';', pa emra skemash). Mund të bësh disa pyetje radhazi për të kuptuar më thellë. Kur krahason periudha, krahaso periudha të barabarta (p.sh. 1 janar deri sot kundrejt 1 janar deri e njëjta ditë vjet). Shitjet: përdor total_value (me TVSH) ose net_value (pa TVSH) dhe thuaje cilën.",
     "Tabelat (të gjitha tashmë vetëm për këtë tenant):",
     ...Object.entries(TABLES).map(([t, d]) => `- ${t}: ${d}`),
@@ -141,6 +156,7 @@ function system(owner: string, tenant: string): string {
 
 const tools = [
   { name: "lexim_db", description: "SQL live (vetëm lexim) mbi të dhënat e tenant-it: shitje, klientë, produkte, borxhe, arkëtime, porosi, agjentë, stok, fitim-humbje. Kthen rreshtat si JSON.", input_schema: { type: "object", properties: { sql: { type: "string", description: "Një SELECT i vetëm." } }, required: ["sql"] } },
+  { name: "te_ardhurat_certifikuara", description: "Të ardhurat zyrtare (brain_revenue_snapshot): neto pa TVSH dhe bruto me TVSH, fatura, klientë, agjentë për një periudhë, plus periudhën e mëparshme dhe ndryshimin %, me verdict të kontrolluar me SADN. group_by opsional (p.sh. 'none').", input_schema: { type: "object", properties: { from: { type: "string", description: "YYYY-MM-DD" }, to: { type: "string", description: "YYYY-MM-DD" }, group_by: { type: "string" } }, required: ["from", "to"] } },
   { name: "pamja_sot", description: "Përmbledhja e sotme nga THA'NA OS: shitjet sot/muaji, shëndeti, borxhet, aprovimet, agjentët sot, sinjalet.", input_schema: { type: "object", properties: {} } },
   { name: "te_dhenat_thana", description: "Pyetje te Truri THA'NA (parashikime, sinjale, analiza të gatshme). Mund të bllokohet nga Pakti; atëherë përdor lexim_db.", input_schema: { type: "object", properties: { pyetja: { type: "string" } }, required: ["pyetja"] } },
   { type: "web_search_20250305", name: "web_search", max_uses: 3 },
@@ -192,6 +208,7 @@ async function think(token: string, tenantId: string, owner: string, tenant: str
     for (const b of j.content ?? []) {
       if (b.type !== "tool_use") continue;
       const out = b.name === "lexim_db" ? await dbQuery(tenantId, String(b.input?.sql ?? ""))
+        : b.name === "te_ardhurat_certifikuara" ? await revenue(tenantId, String(b.input?.from ?? ""), String(b.input?.to ?? ""), String(b.input?.group_by ?? "none"))
         : b.name === "pamja_sot" ? await snapshot(token)
         : b.name === "te_dhenat_thana" ? await brain(token, `${b.input?.pyetja ?? question}\n\n(Pyetje nga biseda me zë: përgjigju shkurt, pa tabela.)`)
         : "Mjet i panjohur.";
