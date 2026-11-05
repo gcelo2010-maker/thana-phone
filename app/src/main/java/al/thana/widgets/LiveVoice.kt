@@ -12,6 +12,10 @@ import android.media.AudioTrack
 import android.media.MediaRecorder
 import android.media.audiofx.AcousticEchoCanceler
 import android.media.audiofx.NoiseSuppressor
+import android.media.audiofx.LoudnessEnhancer
+import android.media.AudioDeviceInfo
+import android.media.AudioFocusRequest
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.util.Base64
@@ -75,6 +79,22 @@ class LiveEngine(private val ctx: Context, private val preferred: String = "open
     private var aec: AcousticEchoCanceler? = null
     private var ns: NoiseSuppressor? = null
     private var track: AudioTrack? = null
+    private var boost: LoudnessEnhancer? = null
+    private var focus: AudioFocusRequest? = null
+    private var lastRoute = 0L
+    @Volatile private var userStopped = false
+    private var reconnects = 0
+
+    /** Mbaj zërin në altoparlant gjatë gjithë bisedës (Android mund ta kalojë te receptori pas pak minutash). */
+    private fun routeSpeaker() {
+        if (audio.mode != AudioManager.MODE_IN_COMMUNICATION) audio.mode = AudioManager.MODE_IN_COMMUNICATION
+        if (Build.VERSION.SDK_INT >= 31) {
+            val sp = audio.availableCommunicationDevices.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
+            if (sp != null && audio.communicationDevice?.type != AudioDeviceInfo.TYPE_BUILTIN_SPEAKER) audio.setCommunicationDevice(sp)
+        } else {
+            @Suppress("DEPRECATION") if (!audio.isSpeakerphoneOn) audio.isSpeakerphoneOn = true
+        }
+    }
     private val playQ = LinkedBlockingQueue<ByteArray>()
     // Ringjallja e jehonës: kur THA'NA flet, zëri i saj nga altoparlanti nuk dërgohet si "fol i përdoruesit".
     private val pre = ArrayDeque<ByteArray>()
@@ -105,7 +125,7 @@ class LiveEngine(private val ctx: Context, private val preferred: String = "open
         if (ctx.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             message.value = "Lejo mikrofonin për THA'NA."; return
         }
-        state.value = VState.Thinking; message.value = null
+        state.value = VState.Thinking; message.value = null; userStopped = false
         scope.launch {
             val c = withContext(Dispatchers.IO) { Repo.voiceSession(ctx, preferred) }
             if (!c.has("token")) { state.value = VState.Idle; message.value = c.optString("error", "Biseda live nuk u hap."); return@launch }
@@ -142,7 +162,15 @@ class LiveEngine(private val ctx: Context, private val preferred: String = "open
         if (!running && !setupDone && cfg != null && state.value == VState.Thinking) {   // s'u hap: provo endpoint-in tjetër
             urlIndex++; connect(); return
         }
-        if (running || connected) end(if (reason.isNotBlank()) "Biseda u mbyll ($reason). Prek orb-in për një bisedë të re." else "Biseda u mbyll. Prek orb-in për një bisedë të re.")
+        if (running || connected) {
+            // Lidhja ra gjatë bisedës: rilidhu vetë (biseda dhe kujtesa mbeten), deri 5 herë.
+            if (!userStopped && reconnects < 5) {
+                reconnects++
+                end(null); stream = null; responseActive = false
+                message.value = "Po rilidhem…"
+                main.postDelayed({ if (!userStopped) start() }, 800)
+            } else end(if (reason.isNotBlank()) "Biseda u mbyll ($reason). Prek orb-in për një bisedë të re." else "Biseda u mbyll. Prek orb-in për një bisedë të re.")
+        }
     }
 
     private fun setupMessage(c: JSONObject) = JSONObject().put("setup", JSONObject()
@@ -193,7 +221,7 @@ class LiveEngine(private val ctx: Context, private val preferred: String = "open
                     send(JSONObject().put("type", "conversation.item.create").put("item", JSONObject().put("type", "message").put("role", "system")
                         .put("content", JSONArray().put(JSONObject().put("type", "input_text").put("text", ctxText)))))
                 }
-                cfg?.optString("greeting")?.takeIf { it.isNotBlank() }?.let { g ->
+                cfg?.optString("greeting")?.takeIf { it.isNotBlank() && reconnects == 0 }?.let { g ->
                     send(JSONObject().put("type", "conversation.item.create").put("item", JSONObject().put("type", "message").put("role", "user")
                         .put("content", JSONArray().put(JSONObject().put("type", "input_text").put("text", g)))))
                     send(JSONObject().put("type", "response.create"))
@@ -232,7 +260,7 @@ class LiveEngine(private val ctx: Context, private val preferred: String = "open
                 setupDone = true; connected = true; message.value = null
                 startAudio()
                 state.value = VState.Listening
-                cfg?.optString("greeting")?.takeIf { it.isNotBlank() }?.let { g ->
+                cfg?.optString("greeting")?.takeIf { it.isNotBlank() && reconnects == 0 }?.let { g ->
                     send(JSONObject().put("clientContent", JSONObject()
                         .put("turns", JSONArray().put(JSONObject().put("role", "user").put("parts", JSONArray().put(JSONObject().put("text", g)))))
                         .put("turnComplete", true)))
@@ -403,15 +431,21 @@ class LiveEngine(private val ctx: Context, private val preferred: String = "open
     @SuppressLint("MissingPermission")
     private fun startAudio() {
         if (running) return
+        focus = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+            .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
+            .setOnAudioFocusChangeListener { }.build().also { audio.requestAudioFocus(it) }
         audio.mode = AudioManager.MODE_IN_COMMUNICATION
-        @Suppress("DEPRECATION") audio.isSpeakerphoneOn = true
+        routeSpeaker()
         val outMin = AudioTrack.getMinBufferSize(24000, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT)
         track = AudioTrack.Builder()
             .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
                 .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
             .setAudioFormat(AudioFormat.Builder().setSampleRate(24000).setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
                 .setEncoding(AudioFormat.ENCODING_PCM_16BIT).build())
-            .setBufferSizeInBytes(outMin * 4).setTransferMode(AudioTrack.MODE_STREAM).build().also { it.play() }
+            .setBufferSizeInBytes(outMin * 4).setTransferMode(AudioTrack.MODE_STREAM).build().also { it.setVolume(1f); it.play() }
+        // Pak më shumë zë (+8 dB) që të dëgjohet qartë në altoparlant.
+        boost = runCatching { LoudnessEnhancer(track!!.audioSessionId).also { it.setTargetGain(800); it.enabled = true } }.getOrNull()
         val sr = rate
         val inMin = AudioRecord.getMinBufferSize(sr, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
         val r = AudioRecord(MediaRecorder.AudioSource.VOICE_COMMUNICATION, sr, AudioFormat.CHANNEL_IN_MONO,
@@ -455,6 +489,8 @@ class LiveEngine(private val ctx: Context, private val preferred: String = "open
                     continue
                 }
                 track?.write(chunk, 0, chunk.size)
+                val now = System.currentTimeMillis()
+                if (now - lastRoute > 10_000) { lastRoute = now; main.post { if (running) routeSpeaker() } }
             }
         }
     }
@@ -465,6 +501,9 @@ class LiveEngine(private val ctx: Context, private val preferred: String = "open
         aec?.release(); aec = null; ns?.release(); ns = null
         runCatching { track?.stop() }; track?.release(); track = null
         playQ.clear()
+        boost?.release(); boost = null
+        focus?.let { audio.abandonAudioFocusRequest(it) }; focus = null
+        if (Build.VERSION.SDK_INT >= 31) audio.clearCommunicationDevice()
         audio.mode = AudioManager.MODE_NORMAL
         @Suppress("DEPRECATION") audio.isSpeakerphoneOn = false
     }
@@ -477,7 +516,7 @@ class LiveEngine(private val ctx: Context, private val preferred: String = "open
         msg?.let { message.value = it }
     }
 
-    override fun stop() = end(null)
+    override fun stop() { userStopped = true; end(null) }
 
-    override fun release() { end(null); scope.cancel(); http.dispatcher.executorService.shutdown() }
+    override fun release() { userStopped = true; end(null); scope.cancel(); http.dispatcher.executorService.shutdown() }
 }

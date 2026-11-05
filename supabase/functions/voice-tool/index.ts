@@ -267,6 +267,9 @@ async function think(token: string, tenantId: string, owner: string, tenant: str
   if (messages.length && messages[messages.length - 1].role === "user") messages.pop();
   messages.push({ role: "user", content: question || "(heshtje)" });
 
+  const t0 = Date.now(), used: string[] = [];
+  // Regjistër i shkurtër në log-et e serverit (jo në databazë) për kontrollin e cilësisë: pyetja, përgjigjja, koha, mjetet.
+  const logTurn = (answer: string) => console.log(JSON.stringify({ ev: "voice_turn", tenant: tenantId.slice(0, 8), ms: Date.now() - t0, tools: used, q: question.slice(0, 400), a: answer.slice(0, 900) }));
   const quick = await quickContext(tenantId).catch(() => "");
   for (let step = 0; step < 8; step++) {
     const req = { max_tokens: 2500, system: [
@@ -282,12 +285,13 @@ async function think(token: string, tenantId: string, owner: string, tenant: str
     if (j.stop_reason !== "tool_use") {
       const text = (j.content ?? []).filter((b: any) => b.type === "text").map((b: any) => b.text).join(" ")
         .replace(/[*#_`>|]/g, " ").replace(/\s+/g, " ").trim();
-      if (text) return text;
+      if (text) { logTurn(text); return text; }
       console.error("voice-tool empty", j.stop_reason, (j.content ?? []).map((b: any) => b.type).join(","));
       messages.push({ role: "user", content: "(Përgjigju tani me zë, me tekst të thjeshtë, duke përdorur atë që gjete.)" });
       continue;
     }
     if (onText) onText(" ");   // ndarës mes hapave
+    (j.content ?? []).forEach((b: any) => { if (b.type === "tool_use" || b.type === "server_tool_use") used.push(b.name); });
     const results = await Promise.all((j.content ?? []).filter((b: any) => b.type === "tool_use").map(async (b: any) => {
       const out = b.name === "lexim_db" ? await dbQuery(tenantId, String(b.input?.sql ?? ""))
         : b.name === "te_ardhurat_certifikuara" ? await revenue(tenantId, String(b.input?.from ?? ""), String(b.input?.to ?? ""), String(b.input?.group_by ?? "none"))

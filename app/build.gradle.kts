@@ -10,8 +10,8 @@ android {
         applicationId = "al.thana.widgets"
         minSdk = 26
         targetSdk = 34
-        versionCode = 12
-        versionName = "0.9.2"
+        versionCode = 13
+        versionName = "0.9.3"
         // THA'NA live (SalesVision AI). Anon key is public by design; access is gated by the PWA session.
         buildConfigField("String", "SUPABASE_URL", "\"https://hrnnlstxepjigtmfhpny.supabase.co\"")
         buildConfigField("String", "ANON_KEY", "\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imhybm5sc3R4ZXBqaWd0bWZocG55Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzMjY1MDcsImV4cCI6MjA4NjkwMjUwN30.abEcQQd4NwB1AnMeyB8ieUt84dnm-Y90scEKOVIhjys\"")
