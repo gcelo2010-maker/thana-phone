@@ -52,9 +52,8 @@ async function dbQuery(tenantId: string, query: string): Promise<string> {
   if (!/^[0-9a-f-]{36}$/i.test(tenantId)) return "Tenant i panjohur.";
   const c = await sql.reserve();
   try {
-    for (const t of Object.keys(TABLES)) {
-      await c.unsafe(`create temp view ${t} as select * from public.${t} where tenant_id = '${tenantId}'::uuid`);
-    }
+    // Të gjitha pamjet me një vajtje-ardhje të vetme te databaza.
+    await c.unsafe(Object.keys(TABLES).map((t) => `create temp view ${t} as select * from public.${t} where tenant_id = '${tenantId}'::uuid`).join(";\n"));
     await c.unsafe("begin transaction read only");
     let rows: any[];
     try {
@@ -86,6 +85,19 @@ async function revenue(tenantId: string, from: string, to: string, groupBy: stri
   } catch (e) {
     return "Gabim: " + String((e as Error).message ?? e).slice(0, 300);
   }
+}
+
+/** Pamja e shpejtë e muajit (e certifikuar), e ruajtur 5 min për tenant: shumë pyetje marrin përgjigje pa asnjë mjet. */
+const quickCache = new Map<string, { at: number; text: string }>();
+async function quickContext(tenantId: string): Promise<string> {
+  const hit = quickCache.get(tenantId);
+  if (hit && Date.now() - hit.at < 5 * 60_000) return hit.text;
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: "Europe/Tirane" });
+  const from = today.slice(0, 8) + "01";
+  const j = await revenue(tenantId, from, today, "none");
+  const text = `Të ardhurat e certifikuara të muajit deri sot (${from} deri ${today}, brain_revenue_snapshot, me periudhën e mëparshme dhe verdict SADN): ${j.slice(0, 3000)}`;
+  quickCache.set(tenantId, { at: Date.now(), text });
+  return text;
 }
 
 /** Pyet Trurin THA'NA (brain-chat, SSE) me sesionin e pronarit. */
@@ -142,7 +154,7 @@ function system(owner: string, tenant: string): string {
     `Ti je THA'NA, partnerja e biznesit e ${owner} për ${tenant}. Sot është ${today} (${iso}). Je e zgjuar, kurioze, e drejtpërdrejtë dhe e ngrohtë, si një bashkëpunëtore e afërt që e njeh mirë biznesin dhe tregun shqiptar.`,
     "Kjo është një bisedë live me zë që vazhdon: mesazhet e mëparshme janë biseda juaj (edhe nga ditët e kaluara). Mbaje kontekstin: 'po', 'vazhdo', 'pse?', 'po Elbasani?', 'ajo që the' lidhen me sa u tha më parë. Mos thuaj kurrë që nuk e mban mend.",
     "Bashkëpunim fluid: lidh shifrat me idetë dhe me atë që ndodh jashtë (tregu, çmimet, konkurrentët, lajmet). Jep mendimin tënd, propozo hapin e radhës, bëj një pyetje kur ndihmon. Bisedë e lirë për çdo temë, edhe jashtë biznesit.",
-    "FORMAT: tekst që lexohet me zë. Asnjë markdown, listë, tabelë, emoji apo simbol. Numrat të rrumbullakuar dhe të lexueshëm: '20,9 milion lekë', 'rreth 26 për qind'. Gjatësia: 1–3 fjali për gjëra të thjeshta, 3–5 për analiza (gjëja kryesore e para); pastaj propozo të shkosh më thellë në vend që të thuash gjithçka menjëherë.",
+    "FORMAT: tekst që lexohet me zë. Asnjë markdown, listë, tabelë, emoji apo simbol. Numrat të rrumbullakuar dhe të lexueshëm: '20,9 milion lekë', 'rreth 26 për qind'. Gjatësia për zë: 1–3 fjali për gjëra të thjeshta; për analiza 3–5 fjali, rreth 60–90 fjalë, kurrë më shumë se 120 fjalë. Gjëja kryesore e para; pastaj një propozim i shkurtër për të shkuar më thellë.",
     "SHIFRAT E KOMPANISË: vetëm nga mjetet, kurrë nga kujtesa apo web-i. Totalet e shitjeve/të ardhurave për një periudhë (dhe krahasimi me periudhën e mëparshme) VETËM nga te_ardhurat_certifikuara: është burimi zyrtar i THA'NA-s, i kontrolluar me SADN; thuaj shkurt që shifra është e verifikuar. Për ndarje të tjera (klientë, produkte, pesha, borxhe, agjentë) përdor lexim_db dhe kur ka rëndësi thuaj që është lexim direkt. pamja_sot për një përmbledhje të sotme. te_dhenat_thana vetëm për parashikime dhe sinjale të Trurit THA'NA.",
     "SAKTËSIA: mos thuaj si fakt asgjë që nuk e ke kontrolluar (ditë pune, kalendari, shkaqe). Nëse është hamendje, thuaje 'ndoshta' ose kontrolloje me një query para se ta thuash.",
     "lexim_db: shkruaj një SELECT të vetëm (pa ';', pa emra skemash). Mund të bësh disa pyetje radhazi për të kuptuar më thellë. Kur krahason periudha, krahaso periudha të barabarta (p.sh. 1 janar deri sot kundrejt 1 janar deri e njëjta ditë vjet). Shitjet: përdor total_value (me TVSH) ose net_value (pa TVSH) dhe thuaje cilën.",
@@ -151,6 +163,7 @@ function system(owner: string, tenant: string): string {
     "Lidhjet: sv_sales.customer_code = sv_customers.customer_code; sv_sales.sku_code = sku_classification.sku_code = sv_products.sku_code; sv_sales.salesperson_code = sv_agents.sadn_force_shitese_id.",
     "web_search për çdo gjë aktuale jashtë kompanisë (lajme, kurse, çmime tregu, ligje, taksa, konkurrentë, moti); thuaj burimin shkurt.",
     "Me zë vetëm lexon dhe këshillon: aprovimet dhe ndryshimet bëhen në app.",
+    "SHPEJTËSIA: mos shkruaj asnjë fjalë para mjeteve (zëri e ka thënë tashmë 'një sekondë'); kur të duhen disa mjete, thirri të gjitha njëherësh në të njëjtin hap. Fjalia e parë e përgjigjes të jetë vetë përgjigjja.",
   ].join("\n");
 }
 
@@ -162,12 +175,75 @@ const tools = [
   { type: "web_search_20250305", name: "web_search", max_uses: 3 },
 ];
 
+/** Për zërin: pa mendim të fshehur para përgjigjes (shpejtësi); mendimi lejohet vetëm mes mjeteve. */
+const thinkingFor = (model: string) => /^claude-(sonnet|opus|fable|mythos)-5/.test(model) ? { thinking: { type: "between_tools" } } : {};
+
+/** Thirrje Claude me streaming: tekstin e dërgon me onText ndërsa vjen; kthen mesazhin e plotë si API pa streaming. */
+async function callClaudeStream(body: Record<string, unknown>, onText: (t: string) => void): Promise<{ ok: boolean; j: any }> {
+  for (const model of MODELS) {
+    const r = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "x-api-key": AKEY, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+      body: JSON.stringify({ ...body, model, stream: true, ...thinkingFor(model) }),
+      signal: AbortSignal.timeout(90_000),
+    }).catch(() => null);
+    if (!r) continue;
+    if (!r.ok || !r.body) {
+      const e = await r.text().catch(() => "");
+      console.error("voice-tool anthropic", model, r.status, e.slice(0, 200));
+      if (r.status !== 404 && r.status !== 400) return { ok: false, j: {} };
+      continue;
+    }
+    const blocks: any[] = [];
+    let stop = "", buf = "";
+    // Teksti hyrës para një mjeti nuk duhet të dalë te zëri: mbahet derisa të kalojë 200 shkronja ose hapi të mbarojë pa mjet.
+    let held = "", live = false;
+    const emit = (d: string) => { if (live) onText(d); else { held += d; if (held.length >= 200) { onText(held); held = ""; live = true; } } };
+    const dec = new TextDecoder();
+    const reader = r.body.getReader();
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let k;
+      while ((k = buf.indexOf("\n\n")) >= 0) {
+        const chunk = buf.slice(0, k); buf = buf.slice(k + 2);
+        const line = chunk.split("\n").find((l) => l.startsWith("data:"));
+        if (!line) continue;
+        let e: any; try { e = JSON.parse(line.slice(5).trim()); } catch { continue; }
+        if (e.type === "content_block_start") {
+          const b = { ...e.content_block };
+          if (b.type === "text") b.text = b.text ?? "";
+          if (b.type === "thinking") { b.thinking = b.thinking ?? ""; b.signature = b.signature ?? ""; }
+          if (b.type === "tool_use" || b.type === "server_tool_use") { b._json = ""; held = ""; live = false; }
+          if (b.type === "text") live = false;
+          blocks[e.index] = b;
+        } else if (e.type === "content_block_delta") {
+          const b = blocks[e.index]; if (!b) continue;
+          if (e.delta.type === "text_delta") { b.text += e.delta.text; emit(e.delta.text); }
+          else if (e.delta.type === "input_json_delta") b._json += e.delta.partial_json;
+          else if (e.delta.type === "thinking_delta") b.thinking += e.delta.thinking;
+          else if (e.delta.type === "signature_delta") b.signature = (b.signature ?? "") + e.delta.signature;
+          else if (e.delta.type === "citations_delta") (b.citations ??= []).push(e.delta.citation);
+        } else if (e.type === "content_block_stop") {
+          const b = blocks[e.index];
+          if (b && "_json" in b) { try { b.input = b._json ? JSON.parse(b._json) : (b.input ?? {}); } catch { b.input = {}; } delete b._json; }
+        } else if (e.type === "message_delta") stop = e.delta?.stop_reason ?? stop;
+        else if (e.type === "error") { console.error("voice-tool stream", JSON.stringify(e).slice(0, 200)); }
+      }
+    }
+    if (stop !== "tool_use" && held) onText(held);
+    return { ok: true, j: { content: blocks.filter(Boolean), stop_reason: stop } };
+  }
+  return { ok: false, j: {} };
+}
+
 async function callClaude(body: Record<string, unknown>): Promise<{ ok: boolean; j: any }> {
   for (const model of MODELS) {
     const r = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: { "x-api-key": AKEY, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-      body: JSON.stringify({ ...body, model }),
+      body: JSON.stringify({ ...body, model, ...thinkingFor(model) }),
       signal: AbortSignal.timeout(60_000),
     }).catch(() => null);
     if (!r) continue;
@@ -179,7 +255,7 @@ async function callClaude(body: Record<string, unknown>): Promise<{ ok: boolean;
   return { ok: false, j: {} };
 }
 
-async function think(token: string, tenantId: string, owner: string, tenant: string, question: string, history: Array<{ role: string; text: string }>): Promise<string> {
+async function think(token: string, tenantId: string, owner: string, tenant: string, question: string, history: Array<{ role: string; text: string }>, onText?: (t: string) => void): Promise<string> {
   const messages: any[] = [];
   for (const h of history.slice(-30)) {
     const role = h.role === "user" ? "user" : "assistant";
@@ -191,10 +267,17 @@ async function think(token: string, tenantId: string, owner: string, tenant: str
   if (messages.length && messages[messages.length - 1].role === "user") messages.pop();
   messages.push({ role: "user", content: question || "(heshtje)" });
 
+  const quick = await quickContext(tenantId).catch(() => "");
   for (let step = 0; step < 8; step++) {
-    const { ok, j } = await callClaude({ max_tokens: 900, system: system(owner, tenant), tools, messages });
+    const req = { max_tokens: 2500, system: [
+      { type: "text", text: system(owner, tenant), cache_control: { type: "ephemeral" } },
+      { type: "text", text: quick ? `PAMJA E SHPEJTË (përdore direkt, pa thirrur mjete, kur pyetja është për shitjet e këtij muaji):\n${quick}` : "Pamja e shpejtë nuk është e disponueshme." },
+    ], tools, messages, ...(step >= 3 ? { tool_choice: { type: "none" } } : {}) };   // për zë: maksimumi 3 hapa me mjete, pastaj përgjigju
+    const { ok, j } = onText ? await callClaudeStream(req, (t) => onText(t.replace(/[*#_`>|]/g, " "))) : await callClaude(req);
     if (!ok) return "Më fal, pata një problem teknik. Provo përsëri.";
-    if (j.content?.length) messages.push({ role: "assistant", content: j.content });
+    // Një tool_use i prerë (pa tool_result) prish hapin tjetër: mbaje vetëm kur modeli ndaloi për mjetet.
+    const content = (j.content ?? []).filter((b: any) => j.stop_reason === "tool_use" || b.type !== "tool_use");
+    if (content.length) messages.push({ role: "assistant", content });
     if (j.stop_reason === "pause_turn") continue;
     if (j.stop_reason !== "tool_use") {
       const text = (j.content ?? []).filter((b: any) => b.type === "text").map((b: any) => b.text).join(" ")
@@ -204,16 +287,15 @@ async function think(token: string, tenantId: string, owner: string, tenant: str
       messages.push({ role: "user", content: "(Përgjigju tani me zë, me tekst të thjeshtë, duke përdorur atë që gjete.)" });
       continue;
     }
-    const results = [];
-    for (const b of j.content ?? []) {
-      if (b.type !== "tool_use") continue;
+    if (onText) onText(" ");   // ndarës mes hapave
+    const results = await Promise.all((j.content ?? []).filter((b: any) => b.type === "tool_use").map(async (b: any) => {
       const out = b.name === "lexim_db" ? await dbQuery(tenantId, String(b.input?.sql ?? ""))
         : b.name === "te_ardhurat_certifikuara" ? await revenue(tenantId, String(b.input?.from ?? ""), String(b.input?.to ?? ""), String(b.input?.group_by ?? "none"))
         : b.name === "pamja_sot" ? await snapshot(token)
         : b.name === "te_dhenat_thana" ? await brain(token, `${b.input?.pyetja ?? question}\n\n(Pyetje nga biseda me zë: përgjigju shkurt, pa tabela.)`)
         : "Mjet i panjohur.";
-      results.push({ type: "tool_result", tool_use_id: b.id, content: out });
-    }
+      return { type: "tool_result", tool_use_id: b.id, content: out };
+    }));
     messages.push({ role: "user", content: results });
   }
   return "Më fal, kjo po zgjat shumë. Provo ta pyesësh më shkurt.";
@@ -239,6 +321,24 @@ Deno.serve(async (req) => {
     const args = body.args ?? {};
     const history = Array.isArray(body.history) ? body.history : [];
     const owner = who.full_name ?? "pronari", tenant = who.tenant ?? "biznesin";
+
+    if (name === "thana_mendo" && body.stream) {
+      const enc = new TextEncoder();
+      const stream = new ReadableStream({
+        async start(ctrl) {
+          const send = (o: unknown) => ctrl.enqueue(enc.encode(`data: ${JSON.stringify(o)}\n\n`));
+          try {
+            const result = await think(token, who.tenant_id, owner, tenant, String(args.pyetja ?? ""), history, (t) => send({ t }));
+            send({ done: true, result });
+          } catch (e) {
+            console.error("voice-tool stream", e);
+            send({ done: true, result: "Më fal, pata një problem teknik. Provo përsëri." });
+          }
+          ctrl.close();
+        },
+      });
+      return new Response(stream, { headers: { ...cors, "Content-Type": "text/event-stream", "Cache-Control": "no-cache" } });
+    }
 
     let result: string;
     if (name === "thana_mendo") result = await think(token, who.tenant_id, owner, tenant, String(args.pyetja ?? ""), history);

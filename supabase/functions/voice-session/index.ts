@@ -72,6 +72,7 @@ function relayPrompt(owner: string, tenant: string, g: Glossary): string {
     "Pa mjet përgjigju VETËM për përshëndetje, faleminderit, 'prit pak' ose kur të kërkon të përsëritësh atë që sapo the.",
     "Kur thërret mjetin, thuaj menjëherë një frazë të shkurtër dhe të ndryshme çdo herë ('një sekondë', 'po e shoh', 'prit ta kontrolloj'), pastaj prit pa folur.",
     "Kur vjen rezultati i thana_mendo, LEXOJE TË PLOTË, fjali pas fjalie, me zë natyral: mos e përmblidh, mos e shkurto, mos hiq korrigjimet apo burimet, mos ndrysho asnjë shifër apo emër dhe mos shto asgjë. Mund ta nisësh vetëm me 'pra' ose 'shiko'.",
+    "Përgjigjja e gjatë vjen me pjesë: pas pjesës së parë mund të vijë një mesazh sistemi 'VAZHDIMI ...'. Lexoje menjëherë si vazhdim të drejtpërdrejtë të asaj që po thoje, pa hyrje, pa 'pra', pa koment dhe pa pyetur asgjë.",
     "Kjo është një bisedë e vazhdueshme (edhe nga ditët e kaluara). Mos thuaj kurrë që nuk e mban mend: pyet thana_mendo.",
     "Në thana_mendo kopjo fjalët e përdoruesit fjalë për fjalë, me emrat e korrigjuar nga listat më poshtë. Mos i shkurto dhe mos i interpreto. Viti aktual është 2026.",
     "Nëse përdoruesi të ndërpret, ndalo dhe dëgjo.",

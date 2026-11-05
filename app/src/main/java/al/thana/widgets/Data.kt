@@ -156,6 +156,31 @@ object Repo {
     } catch (e: IllegalStateException) { e.message ?: "Sesioni ka mbaruar."
     } catch (e: Exception) { "Nuk u lidh me THA'NA. Kontrollo internetin." }
 
+    /** Si voiceTool, por me streaming: onDelta merr tekstin ndërsa Claude e shkruan; kthen përgjigjen e plotë. */
+    fun voiceToolStream(ctx: Context, name: String, args: JSONObject, history: List<Turn>, onDelta: (String) -> Unit): String = try {
+        val tok = token(ctx) ?: throw IllegalStateException("Sesioni ka mbaruar. Hyr përsëri.")
+        val c = open("/functions/v1/voice-tool", "POST")
+        c.setRequestProperty("x-session-token", tok)
+        c.setRequestProperty("Accept", "text/event-stream")
+        c.readTimeout = 120_000
+        val h = JSONArray()
+        history.forEach { h.put(JSONObject().put("role", if (it.mine) "user" else "assistant").put("text", it.text)) }
+        c.send(JSONObject().put("name", name).put("args", args).put("history", h).put("stream", true))
+        if (c.responseCode == 401) { logout(ctx); throw IllegalStateException("Sesioni ka mbaruar. Hyr përsëri.") }
+        var result: String? = null
+        val sb = StringBuilder()
+        c.inputStream.bufferedReader().useLines { lines ->
+            for (line in lines) {
+                if (!line.startsWith("data:")) continue
+                val e = runCatching { JSONObject(line.substring(5).trim()) }.getOrNull() ?: continue
+                if (e.has("t")) { val t = e.getString("t"); sb.append(t); onDelta(t) }
+                if (e.optBoolean("done")) result = e.optString("result")
+            }
+        }
+        result?.takeIf { it.isNotBlank() } ?: sb.toString().trim().ifBlank { "Nuk mora përgjigje tani. Provo përsëri." }
+    } catch (e: IllegalStateException) { e.message ?: "Sesioni ka mbaruar."
+    } catch (e: Exception) { "Nuk u lidh me THA'NA. Kontrollo internetin." }
+
     /** Pyetje te THA'NA AI. onText merr tekstin e grumbulluar ndërkohë që vjen. Kthen session_id. */
     fun ask(ctx: Context, question: String, sessionId: String?, onText: (String) -> Unit): String? {
         val tok = token(ctx) ?: run { onText("Sesioni ka mbaruar. Hyr përsëri."); return sessionId }

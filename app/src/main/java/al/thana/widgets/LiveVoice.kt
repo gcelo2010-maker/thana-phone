@@ -80,6 +80,10 @@ class LiveEngine(private val ctx: Context, private val preferred: String = "open
     private val pre = ArrayDeque<ByteArray>()
     private var loudFrames = 0
     private var userIdx = -1
+    // GPT: përgjigjja e Claude-it vjen me streaming; fjalia e parë niset menjëherë, pjesa tjetër si vazhdim.
+    private class Stream(val id: String) { val buf = StringBuilder(); var sentFirst = false; var finished = false; var cancelled = false }
+    private var stream: Stream? = null
+    private var responseActive = false
     private var modelIdx = -1
 
     override fun statusText() = when {
@@ -205,8 +209,12 @@ class LiveEngine(private val ctx: Context, private val preferred: String = "open
                 turns.add(at, Turn(true, it)); if (modelIdx >= 0) modelIdx++
                 userIdx = -1
             }
-            "input_audio_buffer.speech_started" -> if (state.value == VState.Speaking || playQ.isNotEmpty()) interrupted()
-            "response.done" -> { modelIdx = -1; userIdx = -1 }
+            "input_audio_buffer.speech_started" -> {
+                stream?.let { st -> if (st.sentFirst) { st.cancelled = true; st.buf.setLength(0) } }
+                if (state.value == VState.Speaking || playQ.isNotEmpty()) interrupted()
+            }
+            "response.created" -> responseActive = true
+            "response.done" -> { modelIdx = -1; userIdx = -1; responseActive = false; pump() }
             "response.function_call_arguments.done" -> {
                 val args = runCatching { JSONObject(m.optString("arguments")) }.getOrElse { JSONObject() }
                 runTool(m.optString("call_id"), m.optString("name"), args)
@@ -256,6 +264,76 @@ class LiveEngine(private val ctx: Context, private val preferred: String = "open
         }
     }
 
+    /** Fund i fjalisë së parë (pas të paktën `min` shkronjash) ose i fjalisë së fundit të plotë; -1 nëse s'ka. */
+    private fun cut(sb: StringBuilder, first: Boolean): Int {
+        var best = -1
+        for (i in 0 until sb.length - 1) {
+            val ch = sb[i]
+            if ((ch == '.' || ch == '?' || ch == '!') && sb[i + 1].isWhitespace() && i >= (if (first) 40 else 0)) {
+                best = i + 1
+                if (first) return best
+            }
+        }
+        return best
+    }
+
+    private fun take(sb: StringBuilder, n: Int): String { val t = sb.substring(0, n); sb.delete(0, n); return t.replace(Regex("\\s+"), " ").trim() }
+
+    private fun sendOutput(id: String, text: String, speak: Boolean = true) {
+        send(JSONObject().put("type", "conversation.item.create").put("item", JSONObject()
+            .put("type", "function_call_output").put("call_id", id).put("output", text)))
+        if (speak) { send(JSONObject().put("type", "response.create")); responseActive = true }
+    }
+
+    private fun sendContinuation(text: String) {
+        send(JSONObject().put("type", "conversation.item.create").put("item", JSONObject().put("type", "message").put("role", "system")
+            .put("content", JSONArray().put(JSONObject().put("type", "input_text")
+                .put("text", "VAZHDIMI i përgjigjes së THA'NA-s. Lexoje menjëherë, fjalë për fjalë, si vazhdim i drejtpërdrejtë, pa hyrje dhe pa koment: $text")))))
+        send(JSONObject().put("type", "response.create")); responseActive = true
+    }
+
+    /** Dërgon tekstin e gatshëm te zëri: fjalinë e parë sa më shpejt, pastaj vazhdimin kur zëri është i lirë. */
+    private fun pump() {
+        val st = stream ?: return
+        if (st.cancelled) { if (!st.sentFirst && st.finished) { sendOutput(st.id, "(ndërprerë)", false); stream = null }; return }
+        if (!st.sentFirst) {
+            val n = if (st.finished) st.buf.length else cut(st.buf, true)
+            if (n > 0) {
+                val t = take(st.buf, n)
+                if (t.isNotBlank()) {
+                    sendOutput(st.id, t)
+                    st.sentFirst = true
+                }
+            }
+            if (st.finished && !st.sentFirst) { sendOutput(st.id, "Më fal, nuk mora përgjigje. Provo përsëri."); st.sentFirst = true }
+        } else if (!responseActive) {
+            val n = if (st.finished) st.buf.length else cut(st.buf, false)
+            if (n > 0) { val t = take(st.buf, n); if (t.isNotBlank()) sendContinuation(t) }
+        }
+        if (st.finished && st.sentFirst && st.buf.isBlank()) stream = null
+    }
+
+    private fun runStreamed(id: String, args: JSONObject, history: List<Turn>) {
+        val st = Stream(id); stream = st
+        scope.launch {
+            val full = withContext(Dispatchers.IO) {
+                Repo.voiceToolStream(ctx, "thana_mendo", args, history) { d -> main.post { if (stream === st) { st.buf.append(d); pump() } } }
+            }
+            synchronized(memo) {
+                memo += Turn(true, args.optString("pyetja")); memo += Turn(false, full)
+                while (memo.size > 40) memo.removeAt(0)
+                Repo.saveMemo(ctx, memo)
+            }
+            main.post {
+                if (stream === st) {
+                    if (!st.sentFirst && st.buf.isBlank()) st.buf.append(full)
+                    st.finished = true; pump()
+                }
+                if (state.value == VState.Thinking) state.value = VState.Listening
+            }
+        }
+    }
+
     private fun runTool(id: String, name: String, args: JSONObject) {
             val history = synchronized(memo) { memo.takeLast(30).toList() }
             turns += Turn(false, when (name) {
@@ -265,6 +343,7 @@ class LiveEngine(private val ctx: Context, private val preferred: String = "open
             })
             modelIdx = -1; userIdx = -1
             if (state.value != VState.Speaking) state.value = VState.Thinking
+            if (oa && name == "thana_mendo") { runStreamed(id, args, history); return }
             scope.launch {
                 val result = withContext(Dispatchers.IO) {
                     when (name) {
