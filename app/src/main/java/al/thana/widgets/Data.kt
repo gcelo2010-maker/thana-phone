@@ -133,7 +133,8 @@ object Repo {
         val tok = token(ctx) ?: throw IllegalStateException("Sesioni ka mbaruar. Hyr përsëri.")
         val c = open("/functions/v1/voice-session", "POST")
         c.setRequestProperty("x-session-token", tok)
-        c.send(JSONObject().put("client", BuildConfig.VERSION_NAME).put("engine", engine))
+        // v0.9.5: `async_tools: true` (vetëm Gemini) — pa të serveri jep saktësisht sjelljen e vjetër (bllokuese). Shih VoiceContract.
+        c.send(VoiceContract.sessionBody(BuildConfig.VERSION_NAME, engine))
         val body = c.text()
         runCatching { JSONObject(body) }.getOrElse { JSONObject().put("error", "Përgjigje e papritur (${c.responseCode}).") }
             .also { if (c.responseCode == 401) logout(ctx) }

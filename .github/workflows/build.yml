@@ -2,6 +2,7 @@ name: Build APK
 on:
   push:
     branches: [main]
+  pull_request:          # v0.9.5: testet + APK-ja ndërtohen edhe për PR (pa release) — prova para merge-it
   workflow_dispatch:
 permissions:
   contents: write
@@ -33,7 +34,10 @@ jobs:
           git add errors.txt run.txt && git commit -qm "CI errors for run ${{ github.run_number }}"
           git push -f origin ci-logs
       - run: mv app/build/outputs/apk/debug/app-debug.apk thana-widgets.apk
+      - uses: actions/upload-artifact@v4
+        with: { name: thana-widgets-apk, path: thana-widgets.apk }
       - uses: softprops/action-gh-release@v2
+        if: github.event_name != 'pull_request'   # release vetëm nga main / dispatch, kurrë nga një PR
         with:
           tag_name: build-${{ github.run_number }}
           name: THA'NA Phone ${{ github.run_number }}
