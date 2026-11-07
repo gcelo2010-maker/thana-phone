@@ -19,6 +19,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.util.Base64
+import android.util.Log
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -46,8 +47,14 @@ import kotlin.math.sqrt
  * Bisedë LIVE me zë (Gemini Live, speech-to-speech) me Trurin THA'NA si "tools".
  * Mikrofoni transmetohet vazhdimisht (16 kHz PCM); zëri vjen në kohë reale (24 kHz PCM).
  * Mund ta ndërpresësh THA'NA-n duke folur. Shifrat merren vetëm nga thana_panorama / thana_pyet.
+ *
+ * v0.9.5 (WO-CLIENT-V094, 07/11/2026) — Gemini jo-bllokues: klienti deklaron `async_tools: true` (VoiceContract), serveri (v19+)
+ * i jep mjetit `thana_mendo` behavior NON_BLOCKING dhe prompt të lirë; zëri vazhdon të flasë/dëgjojë sa punon Truri dhe rezultati
+ * dërgohet me `scheduling` (WHEN_IDLE). Plus: watchdog i lidhjes (20 s), prekja e dytë e orb-it e rinis lidhjen e ngecur,
+ * ri-lidhje max 3 me 1/2/4 s, `toolCallCancellation`, log diagnostik «ThanaVoice» pa PII (asnjë transkript, asnjë token).
  */
 class LiveEngine(private val ctx: Context, private val preferred: String = "openai") : VoiceSession {
+    private companion object { const val TAG = "ThanaVoice" }
     override val state = mutableStateOf(VState.Idle)
     override val partial = mutableStateOf("")
     override val level = mutableFloatStateOf(0f)
@@ -84,6 +91,15 @@ class LiveEngine(private val ctx: Context, private val preferred: String = "open
     private var lastRoute = 0L
     @Volatile private var userStopped = false
     private var reconnects = 0
+    /** Mënyra asinkrone e dhënë nga serveri për KËTË sesion (vetëm Gemini, vetëm kur e kërkuam). */
+    private val asyncTools get() = !oa && VoiceContract.asyncTools(cfg)
+    /** Mjete në punë në sfond (mënyra asinkrone): vetëm shenjë në status, zëri nuk ndalon. */
+    private var pendingTools = 0
+    /** Thirrje që modeli i anuloi (`toolCallCancellation`): rezultati i tyre nuk dërgohet. */
+    private val cancelledTools = HashSet<String>()
+    private var connectWatch: Runnable? = null
+    /** Numri i tentativës së lidhjes: rezultati i një voice-session të vjetër (pas rinisjes nga orb-i) injorohet. */
+    private var attempt = 0
 
     /** Mbaj zërin në altoparlant gjatë gjithë bisedës (Android mund ta kalojë te receptori pas pak minutash). */
     private fun routeSpeaker() {
@@ -113,12 +129,20 @@ class LiveEngine(private val ctx: Context, private val preferred: String = "open
         muted -> "Mikrofoni është i mbyllur"
         state.value == VState.Speaking -> "THA'NA po flet · fol për ta ndërprerë"
         state.value == VState.Thinking -> "Po kontrolloj të dhënat te Truri THA'NA…"
+        pendingTools > 0 -> "Po dëgjoj · Truri po përgatit përgjigjen në sfond"
         else -> "Po dëgjoj · fol lirshëm"
     }
 
     override fun onToggle(v: Boolean) { toggle.value = v; muted = !v }
 
-    override fun tap() { if (!connected && state.value == VState.Idle) start() else onToggle(!toggle.value) }
+    override fun tap() {
+        if (connected) { onToggle(!toggle.value); return }
+        // E ngecur «duke u lidhur» (07/11 01:24: prekja vetëm hapte/mbyllte mikrofonin dhe asnjë kërkesë s'arrinte te serveri):
+        // prekja e dytë e mbyll tentativën dhe e rinis nga e para, me sesion të ri.
+        if (state.value == VState.Thinking) { Log.i(TAG, "tap while connecting → restart"); end(null) }
+        reconnects = 0
+        start()
+    }
 
     override fun start() {
         if (connected || state.value == VState.Thinking) return
@@ -127,13 +151,36 @@ class LiveEngine(private val ctx: Context, private val preferred: String = "open
             message.value = "Lejo mikrofonin për THA'NA."; return
         }
         state.value = VState.Thinking; message.value = null; userStopped = false
+        val gen = ++attempt
+        armConnectWatch()
         scope.launch {
+            // Çdo tentativë lidhjeje merr çelës TË RI nga voice-session (çelësi i Gemini-t hap sesion të ri vetëm 2 min pas lëshimit).
             val c = withContext(Dispatchers.IO) { Repo.voiceSession(ctx, preferred) }
-            if (!c.has("token")) { state.value = VState.Idle; message.value = c.optString("error", "Biseda live nuk u hap."); return@launch }
+            if (gen != attempt || userStopped) { Log.i(TAG, "stale voice-session result ignored (attempt $gen)"); return@launch }
+            if (!c.has("token")) {
+                Log.w(TAG, "voice-session refused: ${c.optString("error").take(80)}")
+                end(c.optString("error", "Biseda live nuk u hap.")); return@launch
+            }
             engine.value = c.optString("engine", "gemini")
-            cfg = c; urlIndex = 0; connect()
+            cfg = c; urlIndex = 0
+            Log.i(TAG, "session engine=${engine.value} async=$asyncTools client=${BuildConfig.VERSION_NAME} reconnect=$reconnects")
+            connect()
         }
     }
+
+    /** Lidhja që nuk hapet brenda 20 s kthehet në Idle me mesazh — kurrë «duke menduar» pa fund. */
+    private fun armConnectWatch() {
+        connectWatch?.let { main.removeCallbacks(it) }
+        val r = Runnable {
+            if (!connected && !userStopped && state.value == VState.Thinking) {
+                Log.w(TAG, "connect watchdog fired (${VoiceContract.CONNECT_TIMEOUT_MS} ms)")
+                end("Nuk u lidha me zërin brenda 20 sekondash. Prek orb-in për të provuar përsëri.")
+            }
+        }
+        connectWatch = r; main.postDelayed(r, VoiceContract.CONNECT_TIMEOUT_MS)
+    }
+
+    private fun clearConnectWatch() { connectWatch?.let { main.removeCallbacks(it) }; connectWatch = null }
 
     private fun connect() {
         val c = cfg ?: return
@@ -152,11 +199,20 @@ class LiveEngine(private val ctx: Context, private val preferred: String = "open
     }
 
     private fun listener() = object : WebSocketListener() {
-            override fun onOpen(webSocket: WebSocket, response: Response) { if (!oa) cfg?.let { webSocket.send(setupMessage(it).toString()) } }
+            override fun onOpen(webSocket: WebSocket, response: Response) {
+                Log.i(TAG, "ws open engine=${engine.value} url=$urlIndex http=${response.code}")
+                if (!oa) cfg?.let { webSocket.send(setupMessage(it).toString()) }
+            }
             override fun onMessage(webSocket: WebSocket, text: String) { main.post { handle(text) } }
             override fun onMessage(webSocket: WebSocket, bytes: ByteString) { val t = bytes.utf8(); main.post { handle(t) } }
-            override fun onClosing(webSocket: WebSocket, code: Int, reason: String) { webSocket.close(1000, null); main.post { closed(reason) } }
-            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) { main.post { closed(t.message ?: "") } }
+            override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+                Log.w(TAG, "ws closing code=$code reason=${reason.take(120)} setup=$setupDone connected=$connected")
+                webSocket.close(1000, null); main.post { closed(reason) }
+            }
+            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                Log.w(TAG, "ws failure http=${response?.code} ${t.javaClass.simpleName}: ${t.message?.take(120)} setup=$setupDone connected=$connected")
+                main.post { closed(t.message ?: "") }
+            }
     }
 
     private fun closed(reason: String) {
@@ -164,12 +220,15 @@ class LiveEngine(private val ctx: Context, private val preferred: String = "open
             urlIndex++; connect(); return
         }
         if (running || connected) {
-            // Lidhja ra gjatë bisedës: rilidhu vetë (biseda dhe kujtesa mbeten), deri 5 herë.
-            if (!userStopped && reconnects < 5) {
+            // Lidhja ra gjatë bisedës: rilidhu vetë (biseda dhe kujtesa mbeten) — max 3 herë, me pritje 1/2/4 s dhe sesion të ri
+            // çdo herë. Më parë: 5 herë pa pritje → 07/11 00:26Z: 4 sesione brenda 45 s («lëmsh»). Pas të tretës: mesazh, jo lak.
+            if (!userStopped && reconnects < VoiceContract.MAX_RECONNECTS) {
                 reconnects++
+                val wait = VoiceContract.backoffMs(reconnects)
+                Log.i(TAG, "reconnect $reconnects/${VoiceContract.MAX_RECONNECTS} in $wait ms (${reason.take(60)})")
                 end(null); stream = null; responseActive = false
-                message.value = "Po rilidhem…"
-                main.postDelayed({ if (!userStopped) start() }, 800)
+                message.value = "Po rilidhem… ($reconnects/${VoiceContract.MAX_RECONNECTS})"
+                main.postDelayed({ if (!userStopped) start() }, wait)
             } else end(if (reason.isNotBlank()) "Biseda u mbyll ($reason). Prek orb-in për një bisedë të re." else "Biseda u mbyll. Prek orb-in për një bisedë të re.")
         }
     }
@@ -214,7 +273,8 @@ class LiveEngine(private val ctx: Context, private val preferred: String = "open
     private fun handleOpenAI(m: JSONObject) {
         when (m.optString("type")) {
             "session.created" -> {
-                setupDone = true; connected = true; message.value = null
+                setupDone = true; connected = true; message.value = null; clearConnectWatch()
+                Log.i(TAG, "session.created (openai)")
                 startAudio(); state.value = VState.Listening
                 synchronized(memo) { memo.takeLast(6).toList() }.takeIf { it.isNotEmpty() }?.let { last ->
                     val ctxText = "Biseda e fundit me pronarin (për kontekst, mos e lexo):\n" +
@@ -261,7 +321,8 @@ class LiveEngine(private val ctx: Context, private val preferred: String = "open
         if (oa) { handleOpenAI(m); return }
         when {
             m.has("setupComplete") -> {
-                setupDone = true; connected = true; message.value = null
+                setupDone = true; connected = true; message.value = null; clearConnectWatch()
+                Log.i(TAG, "setupComplete (gemini) async=$asyncTools")
                 startAudio()
                 state.value = VState.Listening
                 cfg?.optString("greeting")?.takeIf { it.isNotBlank() && reconnects == 0 }?.let { g ->
@@ -272,8 +333,16 @@ class LiveEngine(private val ctx: Context, private val preferred: String = "open
             }
             m.has("serverContent") -> server(m.getJSONObject("serverContent"))
             m.has("toolCall") -> tools(m.getJSONObject("toolCall").optJSONArray("functionCalls") ?: JSONArray())
+            // Modeli i anuloi thirrjet (p.sh. përdoruesi e ndërpreu): rezultati i tyre nuk dërgohet më.
+            m.has("toolCallCancellation") -> cancelled(m.getJSONObject("toolCallCancellation").optJSONArray("ids"))
             m.has("goAway") -> message.value = "Biseda po afron limitin e kohës. Pas pak, prek orb-in për një bisedë të re."
         }
+    }
+
+    private fun cancelled(ids: JSONArray?) {
+        ids ?: return
+        for (i in 0 until ids.length()) ids.optString(i).takeIf { it.isNotBlank() }?.let { cancelledTools += it }
+        Log.i(TAG, "toolCallCancellation n=${ids.length()}")
     }
 
     private fun server(sc: JSONObject) {
@@ -373,13 +442,18 @@ class LiveEngine(private val ctx: Context, private val preferred: String = "open
 
     private fun runTool(id: String, name: String, args: JSONObject) {
             val history = synchronized(memo) { memo.takeLast(30).toList() }
+            val async = asyncTools
+            val t0 = System.currentTimeMillis()
+            Log.i(TAG, "toolCall name=$name async=$async pending=${pendingTools + 1}")
             turns += Turn(false, when (name) {
                 "thana_mendo" -> "⟳ Po mendoj…"
                 "thana_pyet" -> "⟳ Truri THA'NA: ${args.optString("pyetja")}"
                 else -> "⟳ Po lexoj pamjen e sotme"
             })
             modelIdx = -1; userIdx = -1
-            if (state.value != VState.Speaking) state.value = VState.Thinking
+            // Jo-bllokues (Gemini, serveri v19+ me async_tools): zëri vazhdon të flasë dhe të dëgjojë; vetëm një shenjë në status.
+            // Bllokues (OpenAI, ose serveri pa async): sjellja e vjetër — «duke menduar» derisa të vijë rezultati.
+            if (async) pendingTools++ else if (state.value != VState.Speaking) state.value = VState.Thinking
             if (oa && name == "thana_mendo") { runStreamed(id, args, history); return }
             scope.launch {
                 val result = withContext(Dispatchers.IO) {
@@ -407,12 +481,19 @@ class LiveEngine(private val ctx: Context, private val preferred: String = "open
                         else -> "Mjet i panjohur."
                     }
                 }
+                val ms = System.currentTimeMillis() - t0
                 if (oa) {
                     send(JSONObject().put("type", "conversation.item.create").put("item", JSONObject()
                         .put("type", "function_call_output").put("call_id", id).put("output", result)))
                     send(JSONObject().put("type", "response.create"))
-                } else send(JSONObject().put("toolResponse", JSONObject().put("functionResponses", JSONArray().put(
-                    JSONObject().put("id", id).put("name", name).put("response", JSONObject().put("result", result))))))
+                } else if (cancelledTools.remove(id)) {
+                    Log.i(TAG, "tool $name done after $ms ms but cancelled by model — no response sent")
+                } else {
+                    val sch = VoiceContract.schedulingFor(cfg, name)   // WHEN_IDLE në mënyrën asinkrone; pa fushë në të vjetrën
+                    send(VoiceContract.toolResponse(id, name, result, sch))
+                    Log.i(TAG, "toolResponse name=$name ms=$ms scheduling=${sch ?: "-"}")
+                }
+                if (async) pendingTools = (pendingTools - 1).coerceAtLeast(0)
                 if (state.value == VState.Thinking) state.value = VState.Listening
             }
     }
@@ -518,9 +599,11 @@ class LiveEngine(private val ctx: Context, private val preferred: String = "open
     }
 
     private fun end(msg: String?) {
+        clearConnectWatch()
         stopAudio()
         ws?.close(1000, null); ws = null
         connected = false; setupDone = false; cfg = null
+        pendingTools = 0; cancelledTools.clear()
         level.floatValue = 0f; state.value = VState.Idle
         msg?.let { message.value = it }
     }
