@@ -6,10 +6,10 @@ data class PanelLink(val role: String, val slug: String) {
 
     /** Widget-et që kanë kuptim për këtë rol (si te paneli). */
     val ids: List<String> get() = when (role) {   // të njëjtat karta si paneli i rolit
-        "p" -> listOf("W1.route", "W2.plan", "W7.daily", "W12.stock", "W6.collect", "W5.tasks", "W9.chat", "W3.product", "W13.reports")
-        "s" -> listOf("W8.team", "W5.tasks", "W6.collect", "W12.stock", "W9.chat", "W2.plan", "W3.product", "W13.reports")
-        "d" -> listOf("W8.team", "W2.plan", "W5.tasks", "W6.collect", "W11.stockneg", "W9.chat", "W3.product", "W13.reports")
-        else -> listOf("W10.distributor", "W12.stock", "W11.stockneg", "W2.plan", "W3.product", "W13.reports")
+        "p" -> listOf("W1.route", "W2.plan", "W7.daily", "W14.tiers", "W12.stock", "W6.collect", "W5.tasks", "W9.chat", "W3.product", "W13.reports")
+        "s" -> listOf("W8.team", "W14.tiers", "W5.tasks", "W6.collect", "W12.stock", "W9.chat", "W2.plan", "W3.product", "W13.reports")
+        "d" -> listOf("W8.team", "W2.plan", "W14.tiers", "W5.tasks", "W6.collect", "W11.stockneg", "W9.chat", "W3.product", "W13.reports")
+        else -> listOf("W10.distributor", "W14.tiers", "W12.stock", "W11.stockneg", "W2.plan", "W3.product", "W13.reports")
     }
 
     companion object {

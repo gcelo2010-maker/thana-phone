@@ -36,6 +36,14 @@ object Viz {
         Canvas(b).drawRoundRect(RectF(0f, 0f, w.toFloat(), h.toFloat()), h / 2f, h / 2f, paint().apply { shader = grad(0f, w.toFloat()) })
     }
 
+    /** Donut me segmente me ngjyra (nivelet e klientëve). */
+    fun donut(parts: List<Pair<Double, Int>>, size: Int = 260): Bitmap = bmp(size, size).also { b ->
+        val cv = Canvas(b); val s = size * 0.14f; val r = RectF(s, s, size - s, size - s)
+        cv.drawArc(r, 0f, 360f, false, paint(P.LINE).apply { style = Paint.Style.STROKE; strokeWidth = s })
+        val tot = parts.sumOf { it.first }.takeIf { it > 0 } ?: return@also
+        var a = -90f; for ((v, c) in parts) { val sw = (v / tot * 360).toFloat(); if (sw > 0) cv.drawArc(r, a + 1f, maxOf(0.5f, sw - 2f), false, paint(c).apply { style = Paint.Style.STROKE; strokeWidth = s }); a += sw }
+    }
+
     /** Unazë: realizimi (gradient) + shenja e pritjes deri sot (e bardhë). */
     fun ring(frac: Double, expected: Double?, size: Int = 260, color: Int? = null): Bitmap = bmp(size, size).also { b ->
         val cv = Canvas(b); val s = size * 0.11f; val r = RectF(s, s, size - s, size - s)
