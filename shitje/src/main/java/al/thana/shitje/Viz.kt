@@ -23,6 +23,14 @@ object Viz {
     private fun paint(c: Int = P.INK) = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = c }
     private fun grad(x0: Float, x1: Float) = LinearGradient(x0, 0f, x1, 0f, P.CYAN, P.LIME, Shader.TileMode.CLAMP)
 
+    /** Sfondi i kartës si paneli: gradient blu i errët + shkëlqim i butë cyan në cep (si widget-et premium). */
+    fun cardBg(w: Int = 800, h: Int = 520): Bitmap = bmp(w, h).also { b ->
+        val cv = Canvas(b)
+        cv.drawRect(0f, 0f, w.toFloat(), h.toFloat(), paint().apply { shader = LinearGradient(0f, 0f, w * 0.6f, h.toFloat(), 0xFF16324A.toInt(), P.BG, Shader.TileMode.CLAMP) })
+        cv.drawCircle(w * 0.92f, h * 0.05f, w * 0.55f, paint().apply { shader = android.graphics.RadialGradient(w * 0.92f, h * 0.05f, w * 0.55f, 0x331FC8E8, 0x001FC8E8, Shader.TileMode.CLAMP) })
+        cv.drawCircle(w * 0.05f, h * 1.0f, w * 0.45f, paint().apply { shader = android.graphics.RadialGradient(w * 0.05f, h * 1.0f, w * 0.45f, 0x227BE36A, 0x007BE36A, Shader.TileMode.CLAMP) })
+    }
+
     /** Shirit i hollë me gradient (thekso kartën, si paneli). */
     fun accent(w: Int = 600, h: Int = 8): Bitmap = bmp(w, h).also { b ->
         Canvas(b).drawRoundRect(RectF(0f, 0f, w.toFloat(), h.toFloat()), h / 2f, h / 2f, paint().apply { shader = grad(0f, w.toFloat()) })

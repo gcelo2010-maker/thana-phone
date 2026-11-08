@@ -54,6 +54,7 @@ private fun mil(v: Double?) = when { v == null -> "—"; Math.abs(v) >= 1e6 -> S
 class PState(val on: Boolean, val w: JSONObject?, val at: Long?, val expired: Boolean)
 private fun pstate(ctx: Context, id: String) = PState(Panel.connected(ctx), Panel.cached(ctx, id), Panel.syncedAt(ctx), Panel.expired(ctx))
 private val ACCENT by lazy { Viz.accent() }
+private val BGIMG by lazy { Viz.cardBg() }
 
 // ---------- tipografia ----------
 @Composable private fun Lbl(t: String) = Text(t.uppercase(), maxLines = 1, style = TextStyle(color = cp(P.MUTED), fontSize = 10.sp, fontWeight = FontWeight.Bold))
@@ -72,7 +73,7 @@ private val ACCENT by lazy { Viz.accent() }
 @Composable
 private fun Card(ctx: Context, title: String, id: String, st: PState, chip: Pair<String, Int>? = null, body: @Composable ColumnScope.(JSONObject) -> Unit) {
     val click = actionStartActivity(Intent(ctx, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP).putExtra("open", id))
-    Column(GlanceModifier.fillMaxSize().background(cp(P.CARD)).cornerRadius(22.dp).clickable(click)) {
+    Column(GlanceModifier.fillMaxSize().background(ImageProvider(BGIMG), ContentScale.FillBounds).cornerRadius(22.dp).clickable(click)) {
         Image(ImageProvider(ACCENT), "", GlanceModifier.fillMaxWidth().height(3.dp), contentScale = ContentScale.FillBounds)
         Column(GlanceModifier.fillMaxSize().padding(horizontal = 14.dp, vertical = 10.dp)) {
             Row(GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -127,8 +128,9 @@ class TeamPanelWidget : GlanceAppWidget() {
         provideContent {
             Card(context, "Ekipi · kundrejt pritjes", "W8.team", st, chipOf(st) { val t = it.optJSONObject("total")!!; val p = t.d("expected_kg")?.let { e -> if (e > 0) t.d("realized_kg")!! / e * 100 else null }; "${n0(p)}%" to P.pct(p) }) { x ->
                 val t = x.optJSONObject("total")
-                Sub("${n0(t?.d("realized_kg"))} / ${n0(t?.d("base"))} kg · duhen ${n0(t?.d("need_per_day"))} kg/ditë", P.INK, 12)
-                Gap(6)
+                Row(verticalAlignment = Alignment.Bottom) { Big(n0(t?.d("realized_kg")), P.INK, 28); Sub("  / ${n0(t?.d("base"))} kg", P.MUTED, 12) }
+                Sub("Duhen ${n0(t?.d("need_per_day"))} kg/ditë · pritej ${n0(t?.d("expected_kg"))}", P.YELLOW, 11)
+                Gap(8)
                 Row(GlanceModifier.fillMaxWidth()) {
                     Column(GlanceModifier.width(110.dp)) { list.forEach { Text(it.optString("name", it.optString("code")), maxLines = 1, style = TextStyle(color = cp(P.INK), fontSize = 11.sp)) } }
                     Column(GlanceModifier.defaultWeight().padding(top = 3.dp)) { Image(ImageProvider(bars), "ekipi", GlanceModifier.fillMaxWidth().height((list.size * 14).dp), contentScale = ContentScale.FillBounds) }
@@ -217,7 +219,8 @@ class ProductPanelWidget : GlanceAppWidget() {
         val bars = Viz.hbars(vals, l.map { P.light(it.optString("light")) }, vals.maxOrNull() ?: 1.0, rowH = 22, gap = 34)
         provideContent {
             Card(context, "Ecuria e produktit", "W3.product", st, chipOf(st) { val m = it.optJSONObject("totals")!!.d("mom_pct"); (if ((m ?: 0.0) >= 0) "+" else "") + n0(m) + "% m/m" to if ((m ?: 0.0) >= 0) P.MINT else P.RED }) { x ->
-                Sub("${n0(x.optJSONObject("totals")?.d("realized_kg"))} kg · ${n0(x.optJSONObject("totals")?.d("pct_base"))}% e bazës", P.INK, 12); Gap(6)
+                Row(verticalAlignment = Alignment.Bottom) { Big(n0(x.optJSONObject("totals")?.d("realized_kg")), P.INK, 28); Sub("  kg · ${n0(x.optJSONObject("totals")?.d("pct_base"))}% e bazës", P.MUTED, 12) }
+                Gap(8)
                 Row(GlanceModifier.fillMaxWidth()) {
                     Column(GlanceModifier.width(96.dp)) { l.forEach { Text(it.optString("line"), maxLines = 1, style = TextStyle(color = cp(P.INK), fontSize = 11.sp)) } }
                     Column(GlanceModifier.defaultWeight().padding(top = 3.dp)) { Image(ImageProvider(bars), "linjat", GlanceModifier.fillMaxWidth().height((l.size * 14).dp), contentScale = ContentScale.FillBounds) }
