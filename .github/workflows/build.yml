@@ -15,6 +15,10 @@ jobs:
         with: { distribution: temurin, java-version: "17" }
       - uses: gradle/actions/setup-gradle@v4
         with: { gradle-version: "8.9" }
+      - name: Signing key (stable)
+        env: { KS_B64: "${{ secrets.THANA_KS_B64 }}", KS_PASS: "${{ secrets.THANA_KS_PASS }}" }
+        run: |
+          if [ -n "$KS_B64" ]; then echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/thana.jks"; echo "THANA_KS=$RUNNER_TEMP/thana.jks" >> "$GITHUB_ENV"; echo "THANA_KS_PASS=$KS_PASS" >> "$GITHUB_ENV"; echo "::add-mask::$KS_PASS"; else echo "pa çelës të qëndrueshëm (debug i rastit)"; fi
       - name: Test and build
         run: |
           set -o pipefail
