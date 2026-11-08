@@ -276,6 +276,10 @@ fun LoginScreen(onDone: () -> Unit) {
         ) { Text(if (busy) "Duke hyrë…" else "Hyr", fontWeight = FontWeight.SemiBold) }
         Spacer(Modifier.height(16.dp))
         Text("Vetëm për drejtorë dhe administratorë", style = T.Small)
+        Spacer(Modifier.height(32.dp))
+        // Widget-et e panelit të shitjeve lidhen edhe PA llogarinë e THA'NA OS (vetëm linku /w + PIN-i i panelit).
+        PanelSettings()
+        Spacer(Modifier.height(24.dp))
     }
 }
 

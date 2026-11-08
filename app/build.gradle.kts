@@ -10,11 +10,19 @@ android {
         applicationId = "al.thana.widgets"
         minSdk = 26
         targetSdk = 34
-        versionCode = 16
-        versionName = "0.9.6"
+        versionCode = 17
+        versionName = "0.9.7"
         // THA'NA live (SalesVision AI). Anon key is public by design; access is gated by the PWA session.
         buildConfigField("String", "SUPABASE_URL", "\"https://hrnnlstxepjigtmfhpny.supabase.co\"")
         buildConfigField("String", "ANON_KEY", "\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imhybm5sc3R4ZXBqaWd0bWZocG55Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzMjY1MDcsImV4cCI6MjA4NjkwMjUwN30.abEcQQd4NwB1AnMeyB8ieUt84dnm-Y90scEKOVIhjys\"")
+    }
+    // Firma e qëndrueshme (v0.9.7): CI firmos me çelësin nga sekreti THANA_KS_B64 → përditësimet instalohen sipër, pa uninstall.
+    signingConfigs {
+        getByName("debug") {
+            System.getenv("THANA_KS")?.let { ks ->
+                storeFile = file(ks); storePassword = System.getenv("THANA_KS_PASS"); keyAlias = "thana"; keyPassword = System.getenv("THANA_KS_PASS")
+            }
+        }
     }
     buildFeatures { compose = true; buildConfig = true }
     compileOptions {
