@@ -18,7 +18,7 @@
                 <data android:scheme="https" android:host="thana-shitje.vercel.app" />
             </intent-filter>
         </activity>
-        <receiver android:name=".PlanPanelReceiver" android:exported="true" android:label="Plani i muajit">
+        <receiver android:name=".PlanPanelReceiver" android:exported="true" android:label="Ecuria e planit">
             <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/w_p_plan" />
         </receiver>
@@ -58,7 +58,7 @@
             <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/w_p_route" />
         </receiver>
-        <receiver android:name=".DailyPanelReceiver" android:exported="true" android:label="Sot">
+        <receiver android:name=".DailyPanelReceiver" android:exported="true" android:label="Ditë pas dite">
             <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/w_p_daily" />
         </receiver>

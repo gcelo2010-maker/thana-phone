@@ -95,23 +95,27 @@ private fun Card(ctx: Context, title: String, id: String, st: PState, chip: Pair
 
 private fun chipOf(st: PState, f: (JSONObject) -> Pair<String, Int>?): Pair<String, Int>? = st.w?.optJSONObject("data")?.let { runCatching { f(it) }.getOrNull() }
 
-// ---------- Plani · unazë ----------
+// ---------- Ecuria e planit · si faqja e panelit: shifra + progres + trendi kumulativ ----------
+private fun n1(v: Double?) = if (v == null) "—" else java.text.DecimalFormat("#,##0.0", DecimalFormatSymbols(Locale.US)).format(v).replace(",", " ").replace(".", ",")
+private fun cumOf(byDay: JSONObject?): List<Pair<Int, Double>> {
+    if (byDay == null) return emptyList(); var acc = 0.0
+    return byDay.keys().asSequence().sorted().map { k -> acc += byDay.optDouble(k, 0.0); k.substring(8, 10).toInt() to acc }.toList()
+}
+private fun monthDays(iso: String?) = runCatching { java.time.YearMonth.parse(iso!!.substring(0, 7)).lengthOfMonth() }.getOrDefault(30)
+
 class PlanPanelWidget : GlanceAppWidget() {
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        val st = pstate(context, "W2.plan"); val d = st.w?.optJSONObject("data")
+        val st = pstate(context, "W2.plan"); val d = st.w?.optJSONObject("data"); val per = st.w?.optJSONObject("period")
         val base = d?.optJSONObject("plan")?.d("base"); val kg = d?.optJSONObject("realized")?.d("kg")
-        val per = st.w?.optJSONObject("period"); val el = per?.d("elapsed_days"); val wd = per?.d("working_days")
-        val ring = Viz.ring(if (base != null && kg != null && base > 0) kg / base else 0.0, if (el != null && wd != null && wd > 0) el / wd else null)
+        val md = monthDays(per?.optString("to")); val dayNow = per?.optString("to")?.takeIf { it.length >= 10 }?.substring(8, 10)?.toIntOrNull()
+        val prog = Viz.progress(if (base != null && kg != null && base > 0) kg / base else 0.0, dayNow?.let { it.toDouble() / md })
+        val trend = Viz.cumulative(cumOf(d?.optJSONObject("realized")?.optJSONObject("by_day")), md, base ?: 0.0)
         provideContent {
-            Card(context, "Plani i muajit", "W2.plan", st, chipOf(st) { "${n0(it.d("pct_base"))}%" to P.light(it.optString("light")) }) { x ->
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Image(ImageProvider(ring), "plani", GlanceModifier.size(64.dp))
-                    Spacer(GlanceModifier.width(12.dp))
-                    Column {
-                        Big("${n0(kg)}", P.INK, 24); Sub("nga ${n0(base)} kg")
-                        Sub("Projeksioni ${n0(x.d("projection_kg"))} kg", P.MINT)
-                    }
-                }
+            Card(context, "Ecuria e planit", "W2.plan", st, chipOf(st) { "${n1(it.d("pct_base"))}%" to P.light(it.optString("light")) }) { x ->
+                Row(verticalAlignment = Alignment.Bottom) { Big(n1(kg), P.INK, 30); Sub(" kg", P.MUTED, 14) }
+                Sub("nga baza ${n0(base)} kg · projeksioni ${n0(x.d("projection_kg"))}", P.MUTED, 11)
+                Gap(6); Pic(prog, 7.dp); Gap(6)
+                Image(ImageProvider(trend), "trendi kumulativ", GlanceModifier.fillMaxWidth().defaultWeight(), contentScale = ContentScale.Fit)
             }
         }
     }
@@ -286,17 +290,22 @@ class RoutePanelWidget : GlanceAppWidget() {
     }
 }
 
-// ---------- Sot (agjenti) · kolonat ditore ----------
+// ---------- Ditë pas dite · kolona me vlera (agjenti: W7; të tjerët: W2) ----------
 class DailyPanelWidget : GlanceAppWidget() {
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        val st = pstate(context, "W7.daily"); val d = st.w?.optJSONObject("data")
-        val bd = d?.optJSONObject("by_day"); val vals = bd?.keys()?.asSequence()?.sorted()?.map { bd.optDouble(it, 0.0) }?.toList()?.takeLast(10) ?: emptyList()
-        val cols = Viz.columns(vals, d?.optJSONObject("need_per_day")?.d("base"))
+        val s7 = pstate(context, "W7.daily"); val s2 = pstate(context, "W2.plan")
+        val st = if (s7.w != null) s7 else s2; val src = if (s7.w != null) "W7.daily" else "W2.plan"
+        val d = st.w?.optJSONObject("data")
+        val bd = if (src == "W7.daily") d?.optJSONObject("by_day") else d?.optJSONObject("realized")?.optJSONObject("by_day")
+        val keys = bd?.keys()?.asSequence()?.sorted()?.toList()?.takeLast(7) ?: emptyList()
+        val vals = keys.map { bd!!.optDouble(it, 0.0) }
+        val pace = if (src == "W7.daily") d?.optJSONObject("need_per_day")?.d("base") else d?.d("need_per_day")
+        val bars = Viz.dayBars(keys.map { dm(it) }, vals, pace)
         provideContent {
-            Card(context, "Sot", "W7.daily", st, chipOf(st) { "${it.optInt("visits_done")}/${it.optInt("visits_total")} viz." to P.CYAN }) { x ->
-                Big("${n0(x.d("kg_today"))} kg", P.INK, 22)
-                val m = x.optJSONObject("month"); Sub("Muaji ${n0(m?.d("kg"))} / ${n0(m?.d("base"))} kg")
-                Gap(6); Pic(cols, 34.dp)
+            Card(context, "Ditë pas dite (kg)", src, st, chipOf(st) { if (src == "W7.daily") "${it.optInt("visits_done")}/${it.optInt("visits_total")} viz." to P.CYAN else null }) { _ ->
+                Row(verticalAlignment = Alignment.Bottom) { Big(n1(vals.lastOrNull()), P.INK, 26); Sub(" kg · ${keys.lastOrNull()?.let { dm(it) } ?: ""}", P.MUTED, 12) }
+                Gap(6)
+                Image(ImageProvider(bars), "ditë pas dite", GlanceModifier.fillMaxWidth().defaultWeight(), contentScale = ContentScale.Fit)
             }
         }
     }
