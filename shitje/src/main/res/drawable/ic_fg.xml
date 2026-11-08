@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- «T» bronz i THA'NA, në zonën e sigurt 66dp të ikonës adaptive -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="#C9A46A" android:pathData="M34,34h40v5H56.5v35h-5V39H34z" />
+    <path android:fillColor="#6FBF95" android:pathData="M63,70a4,4 0 1,0 8,0a4,4 0 1,0 -8,0z" />
+</vector>
