@@ -10,8 +10,8 @@ android {
         applicationId = "al.thana.shitje"   // aplikacion i ri, i ndarë nga «THA'NA» (al.thana.widgets): instalohet krah tij
         minSdk = 26
         targetSdk = 34
-        versionCode = 2
-        versionName = "1.1.0"
+        versionCode = 3
+        versionName = "1.2.0"
     }
     // Firma e QËNDRUESHME (repo privat): çdo version i ri instalohet SIPËR të vjetrit, pa uninstall.
     // Çelësi vlen vetëm për shpërndarjen e brendshme (sideload); nëse do në Play Store, kalon te sekretet e GitHub.
