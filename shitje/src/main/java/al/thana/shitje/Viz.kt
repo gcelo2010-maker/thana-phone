@@ -93,4 +93,48 @@ object Viz {
                 else -> { cv.drawCircle(cx, cy, r, paint(P.CARD)); cv.drawCircle(cx, cy, r, paint(P.GREY).apply { style = Paint.Style.STROKE; strokeWidth = 4f }) }
             } }
     }
+
+    private fun text(c: Int, size: Float, mono: Boolean = false, bold: Boolean = false) = paint(c).apply {
+        textSize = size; typeface = android.graphics.Typeface.create(if (mono) android.graphics.Typeface.MONOSPACE else android.graphics.Typeface.SANS_SERIF, if (bold) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL) }
+    private fun fmt(v: Double, dec: Int = 0): String { val s = java.text.DecimalFormat(if (dec > 0) "#,##0.0" else "#,##0", java.text.DecimalFormatSymbols(java.util.Locale.US)).format(v); return s.replace(",", " ").replace(".", ",") }
+
+    /** Progresi i muajit si te paneli: gjurmë e errët, mbushje gradient, shenjë e bardhë te «pritej deri sot». */
+    fun progress(frac: Double, expected: Double?, w: Int = 1000, h: Int = 28): Bitmap = bmp(w, h).also { b ->
+        val cv = Canvas(b); val r = h / 2f
+        cv.drawRoundRect(RectF(0f, 0f, w.toFloat(), h.toFloat()), r, r, paint(0xFF15303F.toInt()))
+        val x = (w * frac.coerceIn(0.0, 1.0)).toFloat(); if (x > 0) cv.drawRoundRect(RectF(0f, 0f, maxOf(x, h.toFloat()), h.toFloat()), r, r, paint().apply { shader = grad(0f, maxOf(x, h.toFloat())) })
+        expected?.let { val ex = (w * it.coerceIn(0.0, 1.0)).toFloat(); cv.drawRoundRect(RectF(ex - 3f, 0f, ex + 3f, h.toFloat()), 3f, 3f, paint(0xCCF2F7FA.toInt())) }
+    }
+
+    /** «Trendi · kumulativ kundrejt planit»: plani i proratuar (vijë e ndërprerë) + realizimi kumulativ (vijë gradient me sipërfaqe). */
+    fun cumulative(points: List<Pair<Int, Double>>, monthDays: Int, base: Double, w: Int = 1000, h: Int = 440): Bitmap = bmp(w, h).also { b ->
+        val cv = Canvas(b); val l = 30f; val r = w - 30f; val t = 46f; val btm = h - 46f
+        val maxY = maxOf(base, points.lastOrNull()?.second ?: 0.0, 1.0)
+        fun X(d: Int) = l + (r - l) * (d - 1).coerceAtLeast(0) / maxOf(1, monthDays - 1)
+        fun Y(v: Double) = (btm - (btm - t) * (v / maxY)).toFloat()
+        cv.drawLine(l, btm, r, btm, paint(P.LINE).apply { strokeWidth = 3f })
+        cv.drawLine(X(1), Y(0.0), X(monthDays), Y(base), paint(P.MUTED).apply { strokeWidth = 5f; style = Paint.Style.STROKE; pathEffect = DashPathEffect(floatArrayOf(18f, 14f), 0f) })
+        cv.drawText("plan ${fmt(base)}", r, t - 12f, text(P.MUTED, 30f).apply { textAlign = Paint.Align.RIGHT })
+        cv.drawText("1", l, h - 8f, text(P.MUTED, 28f, mono = true)); cv.drawText("$monthDays", r, h - 8f, text(P.MUTED, 28f, mono = true).apply { textAlign = Paint.Align.RIGHT })
+        if (points.isEmpty()) return@also
+        val path = android.graphics.Path().apply { moveTo(X(1), Y(0.0)); points.forEach { lineTo(X(it.first), Y(it.second)) } }
+        val last = points.last(); val area = android.graphics.Path(path).apply { lineTo(X(last.first), btm); lineTo(X(1), btm); close() }
+        cv.drawPath(area, paint().apply { shader = LinearGradient(0f, Y(last.second), 0f, btm, 0x553FE0B5, 0x003FE0B5, Shader.TileMode.CLAMP) })
+        cv.drawPath(path, paint().apply { style = Paint.Style.STROKE; strokeWidth = 8f; strokeJoin = Paint.Join.ROUND; strokeCap = Paint.Cap.ROUND; shader = grad(X(1), X(last.first)) })
+        cv.drawCircle(X(last.first), Y(last.second), 13f, paint(P.LIME))
+        val lbl = fmt(last.second, 1); val tp = text(P.INK, 32f, bold = true)
+        val tx = (X(last.first) + 22f).coerceAtMost(r - tp.measureText(lbl)); cv.drawText(lbl, tx, Y(last.second) + 11f, tp)
+    }
+
+    /** «Ditë pas dite»: kolona gradient me vlerën sipër dhe datën poshtë (si paneli). */
+    fun dayBars(labels: List<String>, vals: List<Double>, pace: Double?, w: Int = 1000, h: Int = 460): Bitmap = bmp(w, h).also { b ->
+        if (vals.isEmpty()) return@also
+        val cv = Canvas(b); val top = 50f; val btm = h - 50f; val n = vals.size; val gap = 18f; val bw = (w - gap * (n - 1)) / n
+        val m = maxOf(vals.maxOrNull() ?: 1.0, pace ?: 0.0, 1e-9); val vt = text(P.MUTED, if (n > 8) 22f else 28f, mono = true).apply { textAlign = Paint.Align.CENTER }
+        vals.forEachIndexed { i, v -> val x = i * (bw + gap); val y = (btm - (btm - top) * (v / m)).toFloat().coerceAtMost(btm - 8f)
+            cv.drawRoundRect(RectF(x, y, x + bw, btm), 16f, 16f, paint().apply { shader = LinearGradient(0f, y, 0f, btm, P.LIME, P.CYAN, Shader.TileMode.CLAMP) })
+            cv.drawText(fmt(v, if (v < 1000) 1 else 0), x + bw / 2, y - 12f, vt)
+            cv.drawText(labels.getOrElse(i) { "" }, x + bw / 2, h - 10f, vt) }
+        pace?.let { val y = (btm - (btm - top) * (it / m)).toFloat(); cv.drawLine(0f, y, w.toFloat(), y, paint(P.YELLOW).apply { strokeWidth = 4f; pathEffect = DashPathEffect(floatArrayOf(16f, 12f), 0f) }) }
+    }
 }
