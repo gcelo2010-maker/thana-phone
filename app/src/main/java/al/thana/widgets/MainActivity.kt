@@ -613,6 +613,7 @@ fun SettingsScreen(name: String?, onRefresh: () -> Unit, onLogout: () -> Unit) {
                 Lbl("Sinkronizimi"); Text("Rifresko tani", style = T.Body.copy(color = T.Brass))
                 Text("Widget-et rifreskohen vetë rreth çdo 15 min. Android mund ta vonojë kur bateria kursehet.", style = T.Small)
             }
+            PanelSettings()
             CardBox(Modifier.fillMaxWidth()) {
                 Lbl("Pajisje e dedikuar")
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -629,7 +630,7 @@ fun SettingsScreen(name: String?, onRefresh: () -> Unit, onLogout: () -> Unit) {
             }
             CardBox(Modifier.fillMaxWidth()) {
                 Lbl("Widget-et")
-                Text("Shtyp gjatë mbi home screen → Widgets → THA'NA: Shitjet sot, Shëndeti, Të arkëtueshme, Aprovime, Sinjale, Shitjet 14 ditë, Pyet THA'NA, Agjentët sot, Fol me THA'NA.", style = T.Small)
+                Text("Shtyp gjatë mbi home screen → Widgets → THA'NA: Shitjet sot, Shëndeti, Të arkëtueshme, Aprovime, Sinjale, Shitjet 14 ditë, Pyet THA'NA, Agjentët sot, Fol me THA'NA — dhe nga paneli i shitjeve: Plani, Ekipi, Stoku negativ, Arkëtimet, Detyrat, Raportet.", style = T.Small)
             }
             CardBox(Modifier.fillMaxWidth()) {
                 Lbl("Rreth THA'NA"); Text("THA'NA Phone ${BuildConfig.VERSION_NAME}", style = T.Body)
@@ -647,4 +648,51 @@ fun SettingsScreen(name: String?, onRefresh: () -> Unit, onLogout: () -> Unit) {
         confirmButton = { TextButton({ askLogout = false; onLogout() }) { Text("Dil", color = T.Bad) } },
         dismissButton = { TextButton({ askLogout = false }) { Text("Anulo", color = T.Muted) } },
     )
+}
+
+// ---------------------------------------------------------------- Paneli i shitjeve (/w)
+/** Lidhja e widget-eve të panelit: linku personal /w + PIN (një herë). Sesioni ruhet i enkriptuar; asgjë s'del nga telefoni përveç te THA'NA. */
+@Composable
+fun PanelSettings() {
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var on by remember { mutableStateOf(Panel.connected(ctx)) }
+    var link by remember { mutableStateOf("") }
+    var pin by remember { mutableStateOf("") }
+    var busy by remember { mutableStateOf(false) }
+    var msg by remember { mutableStateOf<String?>(null) }
+    CardBox(Modifier.fillMaxWidth()) {
+        Lbl("Paneli i shitjeve")
+        if (on) {
+            Text("I lidhur · ${Panel.roleName(ctx) ?: ""}", style = T.Body)
+            Text("Widget-et Plani, Ekipi, Stoku negativ, Arkëtimet, Detyrat dhe Raportet marrin të dhënat e panelit tënd, me të njëjtat leje.", style = T.Small)
+            Spacer(Modifier.height(8.dp))
+            OutlinedButton({ Panel.logout(ctx); on = false; scope.launch { withContext(Dispatchers.IO) { PanelWidgets.updateAll(ctx) } } },
+                shape = RoundedCornerShape(12.dp)) { Text("Shkëput panelin") }
+        } else {
+            Text("Ngjit linkun tënd të panelit (…/w) dhe PIN-in. Bëhet një herë; sesioni vlen 14 ditë.", style = T.Small)
+            val colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = T.Brass, unfocusedBorderColor = T.Border, focusedTextColor = T.Ink, unfocusedTextColor = T.Ink)
+            OutlinedTextField(link, { link = it.trim() }, label = { Text("Linku i panelit") }, singleLine = true, colors = colors,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri), modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(pin, { pin = it.filter(Char::isDigit).take(6) }, label = { Text("PIN") }, singleLine = true, colors = colors,
+                visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                modifier = Modifier.fillMaxWidth())
+            msg?.let { Text(it, style = T.Small.copy(color = T.Bad)) }
+            Spacer(Modifier.height(8.dp))
+            Button({
+                busy = true; msg = null
+                scope.launch {
+                    val err = withContext(Dispatchers.IO) { Panel.login(ctx, link, pin) }
+                    if (err == null) {
+                        withContext(Dispatchers.IO) { Panel.fetch(ctx); PanelWidgets.updateAll(ctx) }
+                        Sync.schedule(ctx); on = true; pin = ""; link = ""
+                    } else msg = err
+                    busy = false
+                }
+            }, enabled = !busy && link.isNotBlank() && pin.length >= 4, shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = T.Brass, contentColor = T.OnBrass)) {
+                Text(if (busy) "Po lidhet…" else "Lidhu")
+            }
+        }
+    }
 }
