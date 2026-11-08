@@ -69,5 +69,29 @@
             <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/w_voice" />
         </receiver>
+        <receiver android:name=".PlanPanelReceiver" android:exported="true" android:label="THA'NA · Plani i muajit">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/w_p_plan" />
+        </receiver>
+        <receiver android:name=".TeamPanelReceiver" android:exported="true" android:label="THA'NA · Ekipi">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/w_p_team" />
+        </receiver>
+        <receiver android:name=".StockNegPanelReceiver" android:exported="true" android:label="THA'NA · Stoku negativ">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/w_p_stockneg" />
+        </receiver>
+        <receiver android:name=".CollectPanelReceiver" android:exported="true" android:label="THA'NA · Arkëtimet">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/w_p_collect" />
+        </receiver>
+        <receiver android:name=".TasksPanelReceiver" android:exported="true" android:label="THA'NA · Detyrat">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/w_p_tasks" />
+        </receiver>
+        <receiver android:name=".ReportsPanelReceiver" android:exported="true" android:label="THA'NA · Raportet">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/w_p_reports" />
+        </receiver>
     </application>
 </manifest>

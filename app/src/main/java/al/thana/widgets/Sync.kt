@@ -21,8 +21,9 @@ import java.util.concurrent.TimeUnit
 class SyncWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, params) {
     override suspend fun doWork(): Result {
         val r = withContext(Dispatchers.IO) { Repo.fetch(applicationContext) }
+        val p = withContext(Dispatchers.IO) { Panel.fetch(applicationContext) }   // paneli i shitjeve (/w), nëse është lidhur
         Widgets.updateAll(applicationContext)
-        return if (r == Repo.Fetch.NETWORK) Result.retry() else Result.success()
+        return if (r == Repo.Fetch.NETWORK || p == Panel.State.NETWORK) Result.retry() else Result.success()
     }
 }
 
@@ -60,5 +61,6 @@ object Widgets {
         TrendWidget().updateAll(c)
         AskWidget().updateAll(c)
         AgentsWidget().updateAll(c)
+        PanelWidgets.updateAll(c)
     }
 }
