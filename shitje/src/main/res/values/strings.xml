@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="d_p_plan">Plani i muajit: kg kundrejt bazës, ritmi dhe projeksioni</string>
+    <string name="d_p_team">Agjentët kundrejt pritjes deri sot</string>
+    <string name="d_p_stockneg">Stoku negativ sipas magazinave, në lekë</string>
+    <string name="d_p_collect">Detyrimet e maturuara dhe klientët në rrezik</string>
+    <string name="d_p_tasks">Detyrat e hapura sipas agjentit</string>
+    <string name="d_p_reports">Raporti i fundit i Grok Shitësi për ty</string>
+</resources>

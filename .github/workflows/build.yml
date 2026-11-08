@@ -37,13 +37,17 @@ jobs:
           echo "run ${{ github.run_number }} · ${{ github.sha }}" > run.txt
           git add errors.txt run.txt && git commit -qm "CI errors for run ${{ github.run_number }}"
           git push -f origin ci-logs
-      - run: mv app/build/outputs/apk/debug/app-debug.apk thana-widgets.apk
+      - run: |
+          mv app/build/outputs/apk/debug/app-debug.apk thana-widgets.apk
+          mv shitje/build/outputs/apk/debug/shitje-debug.apk thana-shitje.apk
       - uses: actions/upload-artifact@v4
-        with: { name: thana-widgets-apk, path: thana-widgets.apk }
+        with: { name: thana-apk, path: "thana-*.apk" }
       - uses: softprops/action-gh-release@v2
         if: github.event_name != 'pull_request'   # release vetëm nga main / dispatch, kurrë nga një PR
         with:
           tag_name: build-${{ github.run_number }}
           name: THA'NA Phone ${{ github.run_number }}
-          files: thana-widgets.apk
+          files: |
+            thana-widgets.apk
+            thana-shitje.apk
           make_latest: true
