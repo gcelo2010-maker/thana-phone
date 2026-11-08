@@ -6,4 +6,10 @@
     <string name="d_p_collect">Detyrimet e maturuara dhe klientët në rrezik</string>
     <string name="d_p_tasks">Detyrat e hapura sipas agjentit</string>
     <string name="d_p_reports">Raporti i fundit i Grok Shitësi për ty</string>
+    <string name="d_p_product">Linjat e produktit kundrejt planit dhe muajit të kaluar</string>
+    <string name="d_p_chat">Bisedat e fundit dhe ato pa përgjigje</string>
+    <string name="d_p_stock">Gjendja e magazinës nga furnizohesh, në lekë</string>
+    <string name="d_p_route">Rruga e sotme: ndalesa e radhës dhe vizitat</string>
+    <string name="d_p_daily">Shitjet e sotme, vizitat dhe ritmi i muajit</string>
+    <string name="d_p_dist">Shitjet e magazinës kundrejt planit, blerësit</string>
 </resources>

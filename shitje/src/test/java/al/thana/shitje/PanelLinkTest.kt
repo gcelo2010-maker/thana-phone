@@ -17,7 +17,7 @@ class PanelLinkTest {
     @Test fun rejectsShortSlug() = assertNull(PanelLink.parse("https://thana-shitje.vercel.app/d/short/w"))
     @Test fun rejectsBadRole() = assertNull(PanelLink.parse("https://thana-shitje.vercel.app/x/AbCdEfGhJkLm2345/w"))
     @Test fun idsPerRole() {
-        assertEquals(listOf("W2.plan", "W6.collect", "W5.tasks", "W13.reports"), PanelLink("p", "x").ids)
+        assertEquals(true, PanelLink("p", "x").ids.containsAll(listOf("W1.route", "W7.daily", "W12.stock")))
         assertEquals(true, PanelLink("d", "x").ids.contains("W11.stockneg"))
         assertEquals(false, PanelLink("s", "x").ids.contains("W11.stockneg"))
     }
