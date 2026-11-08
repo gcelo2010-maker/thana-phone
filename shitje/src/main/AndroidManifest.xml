@@ -42,5 +42,29 @@
             <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/w_p_reports" />
         </receiver>
+        <receiver android:name=".ProductPanelReceiver" android:exported="true" android:label="Ecuria e produktit">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/w_p_product" />
+        </receiver>
+        <receiver android:name=".ChatPanelReceiver" android:exported="true" android:label="Chat">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/w_p_chat" />
+        </receiver>
+        <receiver android:name=".StockPanelReceiver" android:exported="true" android:label="Gjendja e magazinës">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/w_p_stock" />
+        </receiver>
+        <receiver android:name=".RoutePanelReceiver" android:exported="true" android:label="Rruga e sotme">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/w_p_route" />
+        </receiver>
+        <receiver android:name=".DailyPanelReceiver" android:exported="true" android:label="Sot">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/w_p_daily" />
+        </receiver>
+        <receiver android:name=".DistPanelReceiver" android:exported="true" android:label="Magazina ime (distributori)">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/w_p_dist" />
+        </receiver>
     </application>
 </manifest>

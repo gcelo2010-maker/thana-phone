@@ -41,6 +41,8 @@ private fun cp(x: Color) = ColorProvider(x)
 private val NF = DecimalFormat("#,##0", DecimalFormatSymbols(Locale.US).apply { groupingSeparator = ' ' })
 private fun n0(v: Double?) = if (v == null || v.isNaN()) "—" else NF.format(Math.round(v))
 private fun JSONObject.d(k: String): Double? = if (has(k) && !isNull(k)) optDouble(k) else null
+/** 2026-11-08 → 08.11 */
+private fun dm(iso: String) = if (iso.length >= 10) iso.substring(8, 10) + "." + iso.substring(5, 7) else iso
 private fun lightColor(l: String?) = when (l) { "green" -> T.Good; "amber", "yellow" -> T.Warn; "red" -> T.Bad; else -> T.Muted }
 
 @Composable private fun PBig(v: String, col: Color = T.Ink) = Text(v, style = TextStyle(color = cp(col), fontSize = 26.sp, fontFamily = FontFamily.Serif))
@@ -156,15 +158,100 @@ class ReportsPanelWidget : GlanceAppWidget() {
         provideContent { PCard(context, "RAPORTET", "W13.reports", st) { d ->
             val arr = d.optJSONArray("items")
             if (arr == null || arr.length() == 0) PSmall("Ende pa raporte nga Grok.")
-            else { val x = arr.getJSONObject(0); Text(x.optString("label") + " · " + x.optString("period_date").takeLast(5), style = TextStyle(color = cp(T.Ink), fontSize = 13.sp, fontWeight = FontWeight.Bold)); PSmall(x.optString("summary", x.optString("title"))) }
+            else { val x = arr.getJSONObject(0); Text(x.optString("label") + " · " + dm(x.optString("period_date")), style = TextStyle(color = cp(T.Ink), fontSize = 13.sp, fontWeight = FontWeight.Bold)); PSmall(x.optString("summary", x.optString("title"))) }
         }
     } }
+}
+
+// 4×2 · Ecuria e produktit
+class ProductPanelWidget : GlanceAppWidget() {
+    override suspend fun provideGlance(context: Context, id: GlanceId) {
+        val st = pstate(context, "W3.product")
+        provideContent { PCard(context, "ECURIA E PRODUKTIT", "W3.product", st) { d ->
+            val t = d.optJSONObject("totals")
+            PSmall("${n0(t?.d("realized_kg"))} kg · ${t?.d("pct_base")?.let { n0(it) } ?: "—"}% e bazës · ${t?.d("mom_pct")?.let { (if (it >= 0) "+" else "") + n0(it) + "% vs muaji kaluar" } ?: ""}", T.Ink)
+            Spacer(GlanceModifier.height(4.dp))
+            val a = d.optJSONArray("lines"); val list = (0 until (a?.length() ?: 0)).map { a!!.getJSONObject(it) }.sortedByDescending { it.d("realized_kg") ?: 0.0 }.take(4)
+            for (x in list) PRow(x.optString("line"), "${n0(x.d("realized_kg"))} kg", lightColor(x.optString("light")))
+        } }
+    }
+}
+
+// 4×2 · Chat
+class ChatPanelWidget : GlanceAppWidget() {
+    override suspend fun provideGlance(context: Context, id: GlanceId) {
+        val st = pstate(context, "W9.chat")
+        provideContent { PCard(context, "CHAT", "W9.chat", st) { d ->
+            PSmall("${d.optInt("unread")} pa përgjigje", if (d.optInt("unread") > 0) T.Warn else T.Muted)
+            val a = d.optJSONArray("threads")
+            for (i in 0 until minOf(3, a?.length() ?: 0)) { val x = a!!.getJSONObject(i)
+                Text(x.optString("title"), maxLines = 1, style = TextStyle(color = cp(T.Ink), fontSize = 12.sp, fontWeight = FontWeight.Bold))
+                PSmall(x.optString("preview"), size = 11) }
+        } }
+    }
+}
+
+// 2×2 · Gjendja e magazinës
+class StockPanelWidget : GlanceAppWidget() {
+    override suspend fun provideGlance(context: Context, id: GlanceId) {
+        val st = pstate(context, "W12.stock")
+        provideContent { PCard(context, "MAGAZINA", "W12.stock", st) { d ->
+            val w = d.optJSONArray("warehouses")
+            if (w == null || w.length() == 0) PSmall("Pa magazinë të caktuar.")
+            for (i in 0 until minOf(2, w?.length() ?: 0)) { val x = w!!.getJSONObject(i); val t = x.optJSONObject("totals")
+                Text(x.optString("name"), maxLines = 1, style = TextStyle(color = cp(T.Ink), fontSize = 13.sp, fontWeight = FontWeight.Bold))
+                PSmall("${n0(t?.d("value"))} L · ${t?.optInt("skus") ?: "—"} artikuj")
+                if ((t?.optInt("neg_skus") ?: 0) > 0) PSmall("${t?.optInt("neg_skus")} artikuj në minus", T.Bad) }
+        } }
+    }
+}
+
+// 4×2 · Rruga e sotme (agjenti)
+class RoutePanelWidget : GlanceAppWidget() {
+    override suspend fun provideGlance(context: Context, id: GlanceId) {
+        val st = pstate(context, "W1.route")
+        provideContent { PCard(context, "RRUGA", "W1.route", st) { d ->
+            PSmall("${dm(d.optString("date"))} · ${d.optInt("done")}/${d.optInt("total")} vizita", T.Ink)
+            d.optJSONObject("next")?.let { n -> val c = n.optJSONObject("customer")
+                Text("Tani: ${c?.optString("name") ?: "—"}", maxLines = 1, style = TextStyle(color = cp(T.Brass), fontSize = 14.sp, fontWeight = FontWeight.Bold))
+                PSmall(c?.optString("city") ?: "") }
+            val s = d.optJSONArray("stops"); var shown = 0
+            for (i in 0 until (s?.length() ?: 0)) { val x = s!!.getJSONObject(i); if (shown >= 3 || x.optString("status") == "done") continue
+                PRow("${x.optInt("pos")}. ${x.optJSONObject("customer")?.optString("name") ?: ""}", x.optJSONObject("customer")?.optString("city") ?: "", T.Muted); shown++ }
+        } }
+    }
+}
+
+// 2×2 · Raporti ditor (agjenti)
+class DailyPanelWidget : GlanceAppWidget() {
+    override suspend fun provideGlance(context: Context, id: GlanceId) {
+        val st = pstate(context, "W7.daily")
+        provideContent { PCard(context, "SOT", "W7.daily", st) { d ->
+            PBig("${n0(d.d("kg_today"))} kg"); PSmall("${d.optInt("visits_done")}/${d.optInt("visits_total")} vizita")
+            val m = d.optJSONObject("month"); PSmall("Muaji ${n0(m?.d("kg"))} / ${n0(m?.d("base"))} kg", T.Ink)
+            d.optJSONObject("need_per_day")?.d("base")?.let { PSmall("Duhen ${n0(it)} kg/ditë", T.Warn) }
+        } }
+    }
+}
+
+// 4×2 · Distributori
+class DistPanelWidget : GlanceAppWidget() {
+    override suspend fun provideGlance(context: Context, id: GlanceId) {
+        val st = pstate(context, "W10.distributor")
+        provideContent { PCard(context, "MAGAZINA IME", "W10.distributor", st) { d ->
+            PBig("${n0(d.d("kg"))} kg", lightColor(d.optString("light")))
+            PSmall("nga ${n0(d.optJSONObject("plan")?.d("base"))} kg · ${d.optInt("buyers")} blerës · ${d.d("mom_pct")?.let { (if (it >= 0) "+" else "") + n0(it) + "%" } ?: ""}")
+            val ins = d.optJSONArray("insights"); if (ins != null && ins.length() > 0) PSmall(ins.getJSONObject(0).optString("text"), T.Ink)
+        } }
+    }
 }
 
 object PanelWidgets {
     suspend fun updateAll(c: Context) {
         PlanPanelWidget().updateAll(c); TeamPanelWidget().updateAll(c); StockNegPanelWidget().updateAll(c)
         CollectPanelWidget().updateAll(c); TasksPanelWidget().updateAll(c); ReportsPanelWidget().updateAll(c)
+        ProductPanelWidget().updateAll(c); ChatPanelWidget().updateAll(c); StockPanelWidget().updateAll(c)
+        RoutePanelWidget().updateAll(c); DailyPanelWidget().updateAll(c); DistPanelWidget().updateAll(c)
     }
 }
 
@@ -180,3 +267,9 @@ class StockNegPanelReceiver : BaseReceiver() { override val glanceAppWidget: Gla
 class CollectPanelReceiver : BaseReceiver() { override val glanceAppWidget: GlanceAppWidget = CollectPanelWidget() }
 class TasksPanelReceiver : BaseReceiver() { override val glanceAppWidget: GlanceAppWidget = TasksPanelWidget() }
 class ReportsPanelReceiver : BaseReceiver() { override val glanceAppWidget: GlanceAppWidget = ReportsPanelWidget() }
+class ProductPanelReceiver : BaseReceiver() { override val glanceAppWidget: GlanceAppWidget = ProductPanelWidget() }
+class ChatPanelReceiver : BaseReceiver() { override val glanceAppWidget: GlanceAppWidget = ChatPanelWidget() }
+class StockPanelReceiver : BaseReceiver() { override val glanceAppWidget: GlanceAppWidget = StockPanelWidget() }
+class RoutePanelReceiver : BaseReceiver() { override val glanceAppWidget: GlanceAppWidget = RoutePanelWidget() }
+class DailyPanelReceiver : BaseReceiver() { override val glanceAppWidget: GlanceAppWidget = DailyPanelWidget() }
+class DistPanelReceiver : BaseReceiver() { override val glanceAppWidget: GlanceAppWidget = DistPanelWidget() }

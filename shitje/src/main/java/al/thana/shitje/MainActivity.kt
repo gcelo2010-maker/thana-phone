@@ -62,7 +62,7 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); take(intent) }
 
     private fun take(i: Intent?) {
-        i?.getStringExtra("open")?.let { openReq.value = it }
+        i?.getStringExtra("open")?.let { openReq.value = it } ?: run { if (i?.action == Intent.ACTION_MAIN) web?.loadUrl(Panel.link(this)?.base ?: return@run) }   // ikona → paneli i plotë
         i?.dataString?.let { if (PanelLink.parse(it) != null) sharedLink.value = it }
     }
 
@@ -104,11 +104,13 @@ class MainActivity : ComponentActivity() {
                             return runCatching { pick.launch(p.createIntent()); true }.getOrElse { fileCb = null; false }   // foto e raftit: kamera / galeria
                         }
                     }
+                    // Widget i vetëm: «‹ Mbyll» te faqja kthen te ekrani kryesor (paneli thërret ThanaApp.close()).
+                    addJavascriptInterface(object { @android.webkit.JavascriptInterface fun close() { runOnUiThread { moveTaskToBack(true) } } }, "ThanaApp")
                     web = this
-                    loadUrl(l.base + (open?.let { "?t=${System.currentTimeMillis()}#open=$it" } ?: ""))
+                    loadUrl(l.base + (open?.let { "?t=${System.currentTimeMillis()}#only=$it" } ?: ""))
                     openReq.value = null
                 }
-            }, update = { v -> openReq.value?.let { v.loadUrl("${l.base}?t=${System.currentTimeMillis()}#open=$it"); openReq.value = null } })
+            }, update = { v -> openReq.value?.let { v.loadUrl("${l.base}?t=${System.currentTimeMillis()}#only=$it"); openReq.value = null } })
             Box(Modifier.align(Alignment.BottomStart).padding(10.dp)) {
                 SmallFloatingActionButton({ menu = true }, shape = CircleShape, containerColor = T.Surface.copy(alpha = 0.85f), contentColor = T.Muted) { Text("⋯", fontSize = 18.sp) }
                 DropdownMenu(menu, { menu = false }) {

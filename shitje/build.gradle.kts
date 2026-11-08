@@ -10,14 +10,14 @@ android {
         applicationId = "al.thana.shitje"   // aplikacion i ri, i ndarë nga «THA'NA» (al.thana.widgets): instalohet krah tij
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "1.1.0"
     }
+    // Firma e QËNDRUESHME (repo privat): çdo version i ri instalohet SIPËR të vjetrit, pa uninstall.
+    // Çelësi vlen vetëm për shpërndarjen e brendshme (sideload); nëse do në Play Store, kalon te sekretet e GitHub.
     signingConfigs {
         getByName("debug") {
-            System.getenv("THANA_KS")?.let { ks ->
-                storeFile = file(ks); storePassword = System.getenv("THANA_KS_PASS"); keyAlias = "thana"; keyPassword = System.getenv("THANA_KS_PASS")
-            }
+            storeFile = file("signing.p12"); storePassword = "thana-shitje-sideload"; keyAlias = "thana"; keyPassword = "thana-shitje-sideload"
         }
     }
     buildFeatures { compose = true; buildConfig = true }

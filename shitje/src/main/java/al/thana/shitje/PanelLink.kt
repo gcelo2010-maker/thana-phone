@@ -5,11 +5,11 @@ data class PanelLink(val role: String, val slug: String) {
     val base get() = "https://$HOST/$role/$slug/w"
 
     /** Widget-et që kanë kuptim për këtë rol (si te paneli). */
-    val ids: List<String> get() = when (role) {
-        "p" -> listOf("W2.plan", "W6.collect", "W5.tasks", "W13.reports")
-        "s" -> listOf("W2.plan", "W8.team", "W6.collect", "W5.tasks", "W13.reports")
-        "d" -> listOf("W2.plan", "W8.team", "W11.stockneg", "W6.collect", "W5.tasks", "W13.reports")
-        else -> listOf("W2.plan", "W11.stockneg", "W13.reports")
+    val ids: List<String> get() = when (role) {   // të njëjtat karta si paneli i rolit
+        "p" -> listOf("W1.route", "W2.plan", "W7.daily", "W12.stock", "W6.collect", "W5.tasks", "W9.chat", "W3.product", "W13.reports")
+        "s" -> listOf("W8.team", "W5.tasks", "W6.collect", "W12.stock", "W9.chat", "W2.plan", "W3.product", "W13.reports")
+        "d" -> listOf("W8.team", "W2.plan", "W5.tasks", "W6.collect", "W11.stockneg", "W9.chat", "W3.product", "W13.reports")
+        else -> listOf("W10.distributor", "W12.stock", "W11.stockneg", "W2.plan", "W3.product", "W13.reports")
     }
 
     companion object {
