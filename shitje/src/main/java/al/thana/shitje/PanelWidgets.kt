@@ -20,6 +20,7 @@ import androidx.glance.appwidget.provideContent
 import androidx.glance.appwidget.updateAll
 import androidx.glance.background
 import androidx.glance.layout.Alignment
+import androidx.glance.layout.Box
 import androidx.glance.layout.Column
 import androidx.glance.layout.ColumnScope
 import androidx.glance.layout.ContentScale
@@ -329,12 +330,62 @@ class DistPanelWidget : GlanceAppWidget() {
     }
 }
 
+// ---------- Klientët · nivelet (VIP/GOLD/SILVER/BRONZE) ----------
+private val TCOL = mapOf("VIP" to 0xFFB38CFF.toInt(), "GOLD" to 0xFFF0C36B.toInt(), "SILVER" to 0xFFB9C6D0.toInt(), "BRONZE" to 0xFFD08A55.toInt())
+class TiersPanelWidget : GlanceAppWidget() {
+    override suspend fun provideGlance(context: Context, id: GlanceId) {
+        val st = pstate(context, "W14.tiers"); val d = st.w?.optJSONObject("data")
+        val ta = d?.optJSONArray("tiers"); val tiers = (0 until (ta?.length() ?: 0)).map { ta!!.getJSONObject(it) }
+        val ring = Viz.donut(tiers.map { it.optDouble("n", 0.0) to (TCOL[it.optString("tier")] ?: P.GREY) })
+        provideContent {
+            Card(context, "Klientët · nivelet", "W14.tiers", st, chipOf(st) { val r = it.optJSONObject("totals")!!.optInt("risk"); if (r > 0) "⚠ $r" to P.RED else "${it.optJSONObject("totals")!!.optInt("n")}" to P.MINT }) { x ->
+                val tr = x.optJSONObject("trend")
+                Row(GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Box(GlanceModifier.size(84.dp), contentAlignment = Alignment.Center) {
+                        Image(ImageProvider(ring), "nivelet", GlanceModifier.size(84.dp))
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) { Big(n0(x.optJSONObject("totals")?.d("n")), P.INK, 18); Sub("klientë", P.MUTED, 9) }
+                    }
+                    Spacer(GlanceModifier.width(10.dp))
+                    Column(GlanceModifier.defaultWeight()) {
+                        tiers.forEach { t -> Row(GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Text("■ ", style = TextStyle(color = cp(TCOL[t.optString("tier")] ?: P.GREY), fontSize = 12.sp))
+                            Text(t.optString("tier"), modifier = GlanceModifier.defaultWeight(), maxLines = 1, style = TextStyle(color = cp(P.INK), fontSize = 12.sp, fontWeight = FontWeight.Bold))
+                            Text("${t.optInt("n")}", style = TextStyle(color = cp(P.INK), fontSize = 12.sp, fontWeight = FontWeight.Bold))
+                            Text("  ${n0(t.d("share"))}%", style = TextStyle(color = cp(P.MUTED), fontSize = 10.sp)) } }
+                    }
+                }
+                Gap(6)
+                Row { Chip("↑ ${tr?.optInt("up") ?: 0}", P.LIME); Spacer(GlanceModifier.width(4.dp)); Chip("↓ ${tr?.optInt("down") ?: 0}", P.YELLOW); Spacer(GlanceModifier.width(4.dp)); Chip("✕ ${tr?.optInt("lost") ?: 0}", P.RED); Spacer(GlanceModifier.width(4.dp)); Chip("★ ${tr?.optInt("new") ?: 0}", P.CYAN) }
+            }
+        }
+    }
+}
+
+// ---------- VIP & GOLD në rrezik ----------
+class TierRiskPanelWidget : GlanceAppWidget() {
+    override suspend fun provideGlance(context: Context, id: GlanceId) {
+        val st = pstate(context, "W14.tiers"); val d = st.w?.optJSONObject("data")
+        val ra = d?.optJSONArray("risk"); val list = (0 until minOf(5, ra?.length() ?: 0)).map { ra!!.getJSONObject(it) }
+        provideContent {
+            Card(context, "VIP & GOLD në rrezik", "W14.tiers", st, chipOf(st) { val r = it.optJSONObject("totals")!!.optInt("risk"); "$r" to (if (r > 0) P.RED else P.MINT) }) { _ ->
+                if (list.isEmpty()) Sub("Asnjë VIP ose GOLD në rënie. 👍", P.MINT, 12, 2)
+                list.forEach { c -> Row(GlanceModifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("▌", style = TextStyle(color = cp(TCOL[c.optString("tier")] ?: P.GREY), fontSize = 14.sp))
+                    Column(GlanceModifier.defaultWeight()) { Text(c.optString("name", c.optString("code")), maxLines = 1, style = TextStyle(color = cp(P.INK), fontSize = 12.sp, fontWeight = FontWeight.Bold))
+                        Sub("${c.optString("city")} · ${mil(c.d("t12"))} L/12m", P.MUTED, 10) }
+                    if (c.optString("trend") == "lost") Chip("✕ ${c.optInt("days")} ditë", P.RED) else Chip("↓ ${c.optInt("pct")}%", P.YELLOW) } }
+            }
+        }
+    }
+}
+
 object PanelWidgets {
     suspend fun updateAll(c: Context) {
         PlanPanelWidget().updateAll(c); TeamPanelWidget().updateAll(c); StockNegPanelWidget().updateAll(c)
         CollectPanelWidget().updateAll(c); TasksPanelWidget().updateAll(c); ReportsPanelWidget().updateAll(c)
         ProductPanelWidget().updateAll(c); ChatPanelWidget().updateAll(c); StockPanelWidget().updateAll(c)
         RoutePanelWidget().updateAll(c); DailyPanelWidget().updateAll(c); DistPanelWidget().updateAll(c)
+        TiersPanelWidget().updateAll(c); TierRiskPanelWidget().updateAll(c)
     }
 }
 
@@ -355,3 +406,5 @@ class StockPanelReceiver : BaseReceiver() { override val glanceAppWidget: Glance
 class RoutePanelReceiver : BaseReceiver() { override val glanceAppWidget: GlanceAppWidget = RoutePanelWidget() }
 class DailyPanelReceiver : BaseReceiver() { override val glanceAppWidget: GlanceAppWidget = DailyPanelWidget() }
 class DistPanelReceiver : BaseReceiver() { override val glanceAppWidget: GlanceAppWidget = DistPanelWidget() }
+class TiersPanelReceiver : BaseReceiver() { override val glanceAppWidget: GlanceAppWidget = TiersPanelWidget() }
+class TierRiskPanelReceiver : BaseReceiver() { override val glanceAppWidget: GlanceAppWidget = TierRiskPanelWidget() }
