@@ -117,6 +117,7 @@ class MainActivity : ComponentActivity() {
                     DropdownMenuItem({ Text("Rifresko widget-et") }, { menu = false; Sync.now(ctx) })
                     DropdownMenuItem({ Text("Si t'i shtoj widget-et") }, { menu = false; web?.evaluateJavascript("alert('Mbaj gishtin mbi ekranin kryesor → Widgets → THA\\'NA Shitje → tërhiq widget-in që do.')", null) })
                     DropdownMenuItem({ Text("Dil (${PanelLink.ROLE_NAME[l.role] ?: ""})") }, { menu = false; onLogout() })
+                    DropdownMenuItem({ Text("Versioni ${BuildConfig.VERSION_NAME}", color = T.Muted) }, { menu = false })
                 }
             }
         }
